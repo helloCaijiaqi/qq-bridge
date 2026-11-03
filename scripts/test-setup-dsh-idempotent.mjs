@@ -68,9 +68,18 @@ runSetup('第 2 次运行');
 
 const finalPatch = fs.readFileSync(path.join(tmpHome, 'profiles', 'web', 'cordis.patch.yml'), 'utf8');
 
-// 断言 1：每个托管 id 恰好出现一次
+// 断言 1：每个托管 id 恰好出现一次。
+// 名单直接从 setup-dsh.mjs 里读，而不是在这里抄一份 —— 抄一份就会出现
+// 「登记了新服务但测试没跟上」（或反过来）这种两份名单各自漂移的情况。
+const setupSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'setup-dsh.mjs'), 'utf8');
+const managedIds = (setupSrc.match(/const\s+MANAGED_MCP_IDS\s*=\s*\[([^\]]+)\]/)?.[1] ?? '')
+  .split(',')
+  .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+  .filter(Boolean);
 let failed = 0;
-for (const id of ['mcp-snowluma', 'mcp-snowluma-host', 'mcp-web-search-safe']) {
+if (!managedIds.length) { console.log('❌ 未能从 setup-dsh.mjs 读出 MANAGED_MCP_IDS'); failed += 1; }
+console.log(`   托管 id（读自 setup-dsh.mjs）：${managedIds.join(', ')}`);
+for (const id of managedIds) {
   const n = finalPatch.split('\n').filter((l) => new RegExp(`^\\s*-\\s*id:\\s*${id}\\s*$`).test(l)).length;
   const ok = n === 1;
   if (!ok) failed += 1;

@@ -174,14 +174,40 @@ if (scanned.names.size === 0) {
 
 const patch = fs.readFileSync(path.join(DSH_HOME, 'profiles/web/cordis.patch.yml'), 'utf8');
 const patchDoc = yaml.load(patch);
-const mcpIds = patchDoc.filter((e) => e?.insert).flatMap((e) => e.insert.map((x) => x.id));
-check('profile patch 含 3 个 MCP 且无重复', mcpIds.length === 3 && new Set(mcpIds).size === 3, mcpIds.join(', '));
-const snowlumaEntry = patchDoc.filter((e) => e?.insert).flatMap((e) => e.insert).find((x) => x.id === 'mcp-snowluma');
+const mcpEntries = patchDoc.filter((e) => e?.insert).flatMap((e) => e.insert);
+const mcpIds = mcpEntries.map((x) => x.id);
+const pathOfMcp = (id) => String(mcpEntries.find((y) => y?.id === id)?.config?.args?.[0] ?? '');
+
+// 托管名单读自 setup-dsh.mjs 源码（与 test-setup-dsh-idempotent 同口径）：在这里抄一份
+// 名单就会出现「登记了新服务但验证没跟上」两份名单各自漂移。不能改成 import ——
+// setup-dsh.mjs 顶层即执行安装（prepareCordisPatch → autoInstallProfileBundles）。
+const setupSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'setup-dsh.mjs'), 'utf8');
+const managedIds = (setupSrc.match(/const\s+MANAGED_MCP_IDS\s*=\s*\[([^\]]+)\]/)?.[1] ?? '')
+  .split(',')
+  .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+  .filter(Boolean);
+check('读到 setup-dsh.mjs 的 MANAGED_MCP_IDS', managedIds.length > 0, managedIds.join(', ') || '未读到');
+
+// 兄弟包：平级部署、不属于本仓库，所以路径断言必须分两类；名字写在这里是为了
+// 「改了 id 却忘了同步这里」能立刻响，而不是让一个条目静默漏挂。
+const SIBLING_MCP_IDS = ['mcp-memory', 'mcp-rolecard'];
+check('兄弟包 id 仍在托管名单内', SIBLING_MCP_IDS.every((id) => managedIds.includes(id)), managedIds.join(', '));
+
+check(
+  `profile patch MCP 条目与托管名单一致（${managedIds.length} 个）且无重复`,
+  mcpIds.length === managedIds.length && new Set(mcpIds).size === managedIds.length
+    && managedIds.every((id) => mcpIds.includes(id)),
+  `实测 ${mcpIds.join(', ') || '无'}｜缺 ${managedIds.filter((id) => !mcpIds.includes(id)).join(', ') || '无'}`,
+);
+const snowlumaEntry = mcpEntries.find((x) => x.id === 'mcp-snowluma');
 check('mcp-snowluma 带 toolCallTimeoutMs=725000', snowlumaEntry?.config?.toolCallTimeoutMs === 725000);
-check('mcp 路径指向本仓库', mcpIds.every((id) => {
-  const e = patchDoc.filter((x) => x?.insert).flatMap((x) => x.insert).find((y) => y.id === id);
-  return String(e.config.args[0]).includes('qq-bridge');
-}));
+const localMcpIds = managedIds.filter((id) => !SIBLING_MCP_IDS.includes(id));
+check('本仓库 MCP 路径指向 qq-bridge', localMcpIds.every((id) => pathOfMcp(id).includes('qq-bridge')),
+  localMcpIds.map((id) => `${id}=${pathOfMcp(id) || '(缺失)'}`).join(' | '));
+check('兄弟包 MCP 路径指向平级目录', SIBLING_MCP_IDS.every((id) => {
+  const expected = path.resolve(ROOT, '..', `${id.replace(/^mcp-/, '')}-mcp`, 'src', 'server.mjs');
+  return pathOfMcp(id) && path.resolve(pathOfMcp(id)) === expected;
+}), SIBLING_MCP_IDS.map((id) => `${id}=${pathOfMcp(id) || '(缺失)'}`).join(' | '));
 
 const pkg = JSON.parse(fs.readFileSync(path.join(DSH_HOME, 'profiles/web/package.json'), 'utf8'));
 check('profile bundles 含 qq-mode-console', pkg.dsh.profile.bundles.includes('qq-mode-console'));

@@ -77,3 +77,6 @@ audio/
 /_snowluma-catalog.json
 # 本机一键启动器，含本机 Node 运行时绝对路径，不具通用性
 /start-all.cmd
+
+# 本地 AI 助手（CodeBuddy）的计划草稿与工作区数据，非项目内容
+.codebuddy/

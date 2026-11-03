@@ -48,9 +48,20 @@ import fs from 'node:fs';
   assert.equal(nonAscii, 0, 'start.bat 必须保持纯 ASCII（否则非 UTF-8 控制台会乱码）');
   assert.equal(batText.match(/(?<!\r)\n/g)?.length ?? 0, 0, 'start.bat 必须使用 CRLF');
   assert.ok(batText.includes('harden-state-acl.mjs'), 'start.bat 必须在启动桥接前调用 ACL 助手');
-  // 助手必须排在 node src/bridge.js 之前，否则"启动时收紧"就不成立
-  assert.ok(batText.indexOf('harden-state-acl.mjs') < batText.indexOf('node src/bridge.js'), 'ACL 助手必须先于桥接启动');
+  // 助手必须排在真正的桥接启动行之前，否则"启动时收紧"就不成立。
+  // 这里匹配的是**调用形式**而不是 `node src/bridge.js` 字面量：入口改用探测出来的
+  // "%NODE_EXE%" 之后，裸 node 的写法已经不存在了，按字面量匹配会永远 -1。
+  const aclAt = batText.indexOf('harden-state-acl.mjs');
+  const launch = /"%NODE_EXE%"\s+src\\bridge\.js/.exec(batText);
+  assert.ok(launch, 'start.bat 必须用探测出来的 "%NODE_EXE%" 启动 src\\bridge.js');
+  assert.ok(aclAt < launch.index, 'ACL 助手必须先于桥接启动');
+  // 解释器选择：不得回落到 PATH 上的 node，且必须按能力而非版本号判定。
+  assert.ok(!/\r\n\s*node\s+src[\\/]bridge\.js/.test(batText), 'start.bat 不得用裸 node 启动桥接（会命中 PATH 上的旧版本）');
+  assert.ok(batText.includes('globalThis.WebSocket'), '入口必须按能力探测解释器（globalThis.WebSocket 存在与否）');
+  assert.ok(batText.includes('QQBRIDGE_NODE'), '入口必须允许用 QQBRIDGE_NODE 显式指定解释器');
+  assert.ok(batText.includes('DeepSeekHarness\\node\\node.exe'), '入口必须优先考虑 DSH 自带的 node');
   console.log('state ACL hardening: helper is non-blocking, recursion-guarded, and wired into start.bat');
+  console.log('start.bat interpreter guard: capability-probed, never falls back to PATH node');
 }
 
 // ── 合规不变量 L6：本程序**只探测、不部署** SnowLuma ────────────────────────────────

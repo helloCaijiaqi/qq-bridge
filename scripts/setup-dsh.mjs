@@ -5,8 +5,10 @@
 //   1. 安装两套 agent preset：qq-chat、qq-chat-v2
 //      （DSH 0.1.7 机制：作为 qq-agent-presets bundle 的 patch 层插入
 //        @deepseek-ai/dsh-agent-preset 行；~/.dsh/.agent-presets/ 目录已不再被读取）
-//   2. 在 DSH profile 的 cordis.patch.yml 中挂载三个 MCP server：
-//      mcp-snowluma / mcp-snowluma-host / mcp-web-search-safe
+//   2. 在 DSH profile 的 cordis.patch.yml 中挂载五个 MCP server：
+//      mcp-snowluma / mcp-snowluma-host / mcp-web-search-safe（本仓库自带）
+//      mcp-memory / mcp-rolecard（平级部署的兄弟包 ../memory-mcp、../rolecard-mcp，
+//        与 QQ 无关的能力都在那边；具体 id 见下面的 MANAGED_MCP_IDS）
 //   3. 在 profile package.json 中注册两个 bundle：qq-mode-console、qq-agent-presets
 //
 // 用法：
@@ -122,8 +124,11 @@ function yamlSingleQuote(s) {
   return `'${String(s).replace(/'/g, "''")}'`;
 }
 
-// 由桥接托管的 MCP 条目 id：脚本对这三个 id 拥有所有权，可安全地按 id 增删。
-const MANAGED_MCP_IDS = ['mcp-snowluma', 'mcp-snowluma-host', 'mcp-web-search-safe'];
+// 由桥接托管的 MCP 条目 id：脚本对这几个 id 拥有所有权，可安全地按 id 增删。
+// mcp-memory / mcp-rolecard 是**平级部署**的兄弟包（../memory-mcp、../rolecard-mcp），
+// 与 QQ 无关的能力都在那边。这里登记后 DSH 才能看到它们 —— 忘了登记是"配了却看不见"
+// 的典型原因（删 mcp-qq-ui 时的教训：清理名单与写入名单要分清）。
+const MANAGED_MCP_IDS = ['mcp-snowluma', 'mcp-snowluma-host', 'mcp-web-search-safe', 'mcp-memory', 'mcp-rolecard'];
 
 function mcpEntries() {
   const node = process.execPath;
@@ -131,6 +136,10 @@ function mcpEntries() {
     'mcp-snowluma': { serverName: 'snowluma', script: path.join(REPO_ROOT, 'src', 'mcp-snowluma-safe.js'), toolCallTimeoutMs: 725000 },
     'mcp-snowluma-host': { serverName: 'snowluma-host', script: path.join(REPO_ROOT, 'src', 'mcp-host-server.js') },
     'mcp-web-search-safe': { serverName: 'web-search-safe', script: path.join(REPO_ROOT, 'src', 'mcp-web-search-safe.js') },
+    // 兄弟包缺失时也要照样写进 patch：缺了会在 DSH 里报"启动失败"，这比
+    // "静默少两个服务、agent 找不到工具"更容易定位。
+    'mcp-memory': { serverName: 'memory', script: path.join(REPO_ROOT, '..', 'memory-mcp', 'src', 'server.mjs') },
+    'mcp-rolecard': { serverName: 'rolecard', script: path.join(REPO_ROOT, '..', 'rolecard-mcp', 'src', 'server.mjs') },
   };
   let out = '# === qq-bridge MCP BEGIN ===\n';
   out += '# 由 scripts/setup-dsh.mjs 维护；这段区块会被整体替换，请勿手工编辑内部条目。\n';
