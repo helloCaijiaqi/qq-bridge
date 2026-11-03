@@ -21,7 +21,7 @@
 
 | 入口 | 谁在用 | 说明 |
 | --- | --- | --- |
-| stdio MCP | DSH（通过 `cordis.patch.yml` 的 `mcp-memory` 条目挂载，由 `qq-bridge/scripts/setup-dsh.mjs` 登记） | 工具面：`memory_*` / `slang_*` / `memory_context_render` |
+| stdio MCP | DSH（通过 `cordis.patch.yml` 的 `mcp-memory` 条目挂载，由**本服务自己的** `scripts/install-dsh.mjs` 登记） | 工具面：`memory_*` / `slang_*` / `memory_context_render` |
 | 回环 HTTP（默认 `127.0.0.1:7181`） | qq-bridge（`src/memory-client.js`） | 只监听回环；非回环来源 403；除 `/api/health` 外都要本地令牌 |
 
 启动：
@@ -115,7 +115,7 @@ npm test                 # session-id / store / memory / slang / interfaces / mi
 
 ### 进程归属
 
-两个入口跑在**同一个进程**里，进程由 DSH 派生（`cordis.patch.yml` 的 `mcp-memory` 条目 → `node <包>/src/server.mjs`）。
+两个入口跑在**同一个进程**里，进程由 DSH 派生（`cordis.patch.yml` 的 `mcp-memory` 条目 → `node <包>/src/server.mjs`，条目由 `npm run install:dsh` 维护）。
 所以没有 systemd / 计划任务要装，"部署"= 装依赖 + 登记条目 + 验收。
 
 - **同一时刻只能有一份**：再 `npm start` 一份会撞 7181。
@@ -127,11 +127,22 @@ npm test                 # session-id / store / memory / slang / interfaces / mi
 ```bash
 cd memory-mcp
 npm ci                 # 用 lockfile 安装，不要 npm install（会改 lock）
-npm run preflight      # node 版本 / 依赖 / state 可写 / 令牌 / 端口占用
+npm run install:dsh    # 把 mcp-memory 条目写进 DSH 的 cordis.patch.yml
+npm run preflight      # node 版本 / 依赖 / state 可写 / 令牌 / 端口 / DSH 登记
 ```
 
 - **Node 必须 >= 24**：`node:sqlite` 在 24 之前需要 `--experimental-sqlite`，`engines` 已收紧到 `>=24.0.0`。
 - `preflight` 对"端口已被占用"只提醒：若本服务已在跑属正常；若是别的进程占着，新实例会降级为 stdio-only。
+- **安装器属于本服务自己**（`scripts/install-dsh.mjs`），不再由 `qq-bridge/scripts/setup-dsh.mjs` 代劳：只追加/替换自己那段带 `# === memory-mcp MCP BEGIN/END ===` 标记的区块，profile patch 里别人写的内容一个字节都不动。常用形式：
+  ```bash
+  npm run install:dsh              # 装进 web profile（默认）
+  npm run install:dsh -- work      # 装进 work profile
+  npm run install:dsh -- --global  # 装进 home 层（所有 profile 生效）
+  npm run install:dsh -- --check   # 只检查；未登记或路径不符时退出码 1
+  npm run install:dsh -- --remove  # 卸载
+  ```
+  改完**不用**重启 DSH、也不用 `npm install`：新建一个 DSH 会话就能看到 `mcp__memory__*` 工具。
+- **已知边界**：`qq-bridge/scripts/setup-dsh.mjs` 会 `yaml.load → yaml.dump` 整体重写 profile patch，注释会被抹掉。若先装本服务、后跑那个脚本，本服务的区块标记会消失（条目与 id 仍在，工具照常可用，`--check` 也能通过）；要让本脚本重新纳管，手工删掉那条 `mcp-memory` 条目再跑一次 `npm run install:dsh`。
 
 ### 数据与令牌
 
@@ -167,8 +178,8 @@ node --input-type=module -e "import {DatabaseSync} from 'node:sqlite';const d=ne
 
 1. 拷 `src/`、`package.json`、`package-lock.json`，`state/`（含令牌）单独拷；
 2. 目标机 `npm ci`；
-3. 在 qq-bridge 下跑 `node scripts/setup-dsh.mjs`（**必须**：patch 里写的是绝对路径）；
-4. 重启 DSH；
+3. 在 **memory-mcp** 下跑 `npm run install:dsh`（**必须**：patch 里写的是绝对路径，换机/换目录后旧路径就失效了）；
+4. 新建 DSH 会话验证 `mcp__memory__*` 工具出现（不用重启 DSH）；
 5. 在 qq-bridge 下跑 `node scripts/check-mcp-health.mjs`，应 2/2 OK。
 
 ### 验收清单

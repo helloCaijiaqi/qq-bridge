@@ -38,6 +38,28 @@ const legacyPatch = `# legacy profile patch
         command: node
         args:
           - 'old/path/mcp-host-server.js'
+
+# 历史版本代管的兄弟包条目：现在由 ../memory-mcp、../rolecard-mcp 各自安装，
+# 这里预置进来验证「旧条目确实被移出」而不是「本来就没有」。
+- insert:
+    - id: mcp-memory
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: memory
+        transport: stdio
+        command: node
+        args:
+          - 'old/path/memory-mcp/src/server.mjs'
+
+- insert:
+    - id: mcp-rolecard
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: rolecard
+        transport: stdio
+        command: node
+        args:
+          - 'old/path/rolecard-mcp/src/server.mjs'
 `;
 fs.writeFileSync(path.join(tmpHome, 'profiles', 'web', 'cordis.patch.yml'), legacyPatch, 'utf8');
 fs.writeFileSync(path.join(tmpHome, 'profiles', 'web', 'package.json'), JSON.stringify({
@@ -63,7 +85,7 @@ function runSetup(label) {
   return r;
 }
 
-runSetup('第 1 次运行');
+const firstRun = runSetup('第 1 次运行');
 runSetup('第 2 次运行');
 
 const finalPatch = fs.readFileSync(path.join(tmpHome, 'profiles', 'web', 'cordis.patch.yml'), 'utf8');
@@ -90,6 +112,24 @@ for (const id of managedIds) {
 const hasOldPath = finalPatch.includes('old/path/');
 console.log(`${hasOldPath ? '❌' : '✅'} 旧脚本路径已清除（old/path 出现=${hasOldPath}）`);
 if (hasOldPath) failed += 1;
+
+// 断言 2b：历史代管的兄弟包条目被移出（两个服务现在各自装），且日志给出新入口。
+// 名单同样读自源码，避免「改了 setup-dsh 但测试没跟上」。
+const legacyIds = (setupSrc.match(/const\s+LEGACY_MCP_IDS\s*=\s*\[([^\]]+)\]/)?.[1] ?? '')
+  .split(',')
+  .map((s) => s.trim().replace(/^['"]|['"]$/g, ''))
+  .filter(Boolean);
+if (!legacyIds.length) { console.log('❌ 未能从 setup-dsh.mjs 读出 LEGACY_MCP_IDS'); failed += 1; }
+for (const id of legacyIds) {
+  const seeded = legacyPatch.includes(`id: ${id}`);
+  const n = finalPatch.split('\n').filter((l) => new RegExp(`^\\s*-\\s*id:\\s*${id}\\s*$`).test(l)).length;
+  const ok = seeded && n === 0;
+  if (!ok) failed += 1;
+  console.log(`${ok ? '✅' : '❌'} 历史条目 ${id} 已移出（预置=${seeded}，安装后出现 ${n} 次）`);
+}
+const hintOk = legacyIds.length > 0 && legacyIds.every((id) => (firstRun.stdout || '').includes('已移出历史代管的兄弟包条目'));
+console.log(`${hintOk ? '✅' : '❌'} 日志提示了两个服务的独立安装入口（npm run install:dsh）`);
+if (!hintOk) failed += 1;
 
 // 断言 3：独立成行的 [] 已被剥离
 const hasBareArray = /^[ \t]*\[\][ \t]*$/m.test(finalPatch);
@@ -134,6 +174,32 @@ for (const p of ['qq-chat', 'qq-chat-v2']) {
 const legacyDir = path.join(tmpHome, '.agent-presets');
 console.log(`${legacyDir && !fs.existsSync(legacyDir) ? '✅' : '❌'} 未创建 0.1.7 已废弃的 ~/.dsh/.agent-presets`);
 if (fs.existsSync(legacyDir)) failed += 1;
+
+// 断言 7：对方 install-dsh.mjs 接管之后（区块标记在文件里），再跑本脚本不得把那条删掉。
+// 这是「可重复运行」与「两个服务各自安装」两条要求的交点：本脚本每次都会按 id 清理，
+// 但如果这条 id 已经归对方的区块所有，就必须留着。
+const adoptedPatch = `${finalPatch.trimEnd()}\n\n`
+  + '# === memory-mcp MCP BEGIN ===\n'
+  + '- insert:\n'
+  + '    - id: mcp-memory\n'
+  + "      name: '@deepseek-ai/dsh-mcp-client'\n"
+  + '      config:\n'
+  + '        serverName: memory\n'
+  + '        transport: stdio\n'
+  + "        command: 'node'\n"
+  + '        args:\n'
+  + "          - 'C:/memory-mcp/src/server.mjs'\n"
+  + '# === memory-mcp MCP END ===\n';
+fs.writeFileSync(path.join(tmpHome, 'profiles', 'web', 'cordis.patch.yml'), adoptedPatch, 'utf8');
+const adoptedRun = runSetup('第 3 次运行（memory-mcp 已接管）');
+const afterAdopt = fs.readFileSync(path.join(tmpHome, 'profiles', 'web', 'cordis.patch.yml'), 'utf8');
+const adoptedCount = afterAdopt.split('\n').filter((l) => /^\s*-\s*id:\s*mcp-memory\s*$/.test(l)).length;
+const adoptedOk = adoptedCount === 1 && !(adoptedRun.stdout || '').includes('已移出历史代管的兄弟包条目');
+console.log(`${adoptedOk ? '✅' : '❌'} 已被 memory-mcp 接管的条目未被误删（出现 ${adoptedCount} 次，日志无「已移出」提示）`);
+if (!adoptedOk) failed += 1;
+const stillThree = afterAdopt.split('\n').filter((l) => /^\s*-\s*id:\s*mcp-snowluma(-host)?\s*$/.test(l)).length === 2;
+console.log(`${stillThree ? '✅' : '❌'} 本仓库的 snowluma 两条仍在（重写后仍保留）`);
+if (!stillThree) failed += 1;
 
 console.log(failed === 0 ? '\n✅ setup-dsh.mjs 幂等性测试通过' : `\n❌ ${failed} 项失败`);
 process.exit(failed === 0 ? 0 : 1);

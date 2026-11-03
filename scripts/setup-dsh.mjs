@@ -5,10 +5,11 @@
 //   1. 安装两套 agent preset：qq-chat、qq-chat-v2
 //      （DSH 0.1.7 机制：作为 qq-agent-presets bundle 的 patch 层插入
 //        @deepseek-ai/dsh-agent-preset 行；~/.dsh/.agent-presets/ 目录已不再被读取）
-//   2. 在 DSH profile 的 cordis.patch.yml 中挂载五个 MCP server：
-//      mcp-snowluma / mcp-snowluma-host / mcp-web-search-safe（本仓库自带）
-//      mcp-memory / mcp-rolecard（平级部署的兄弟包 ../memory-mcp、../rolecard-mcp，
-//        与 QQ 无关的能力都在那边；具体 id 见下面的 MANAGED_MCP_IDS）
+//   2. 在 DSH profile 的 cordis.patch.yml 中挂载本仓库的三个 MCP server：
+//      mcp-snowluma / mcp-snowluma-host / mcp-web-search-safe（具体 id 见 MANAGED_MCP_IDS）
+//      平级部署的 ../memory-mcp、../rolecard-mcp **不在这里挂**：它们各有自己的
+//      scripts/install-dsh.mjs，谁的能力谁负责装。本脚本只负责把历史代管的那两条清掉
+//      （见 LEGACY_MCP_IDS），避免同一条 id 被两个安装器各写一份。
 //   3. 在 profile package.json 中注册两个 bundle：qq-mode-console、qq-agent-presets
 //
 // 用法：
@@ -125,10 +126,17 @@ function yamlSingleQuote(s) {
 }
 
 // 由桥接托管的 MCP 条目 id：脚本对这几个 id 拥有所有权，可安全地按 id 增删。
-// mcp-memory / mcp-rolecard 是**平级部署**的兄弟包（../memory-mcp、../rolecard-mcp），
-// 与 QQ 无关的能力都在那边。这里登记后 DSH 才能看到它们 —— 忘了登记是"配了却看不见"
-// 的典型原因（删 mcp-qq-ui 时的教训：清理名单与写入名单要分清）。
-const MANAGED_MCP_IDS = ['mcp-snowluma', 'mcp-snowluma-host', 'mcp-web-search-safe', 'mcp-memory', 'mcp-rolecard'];
+// 忘了登记是"配了却看不见"的典型原因（删 mcp-qq-ui 时的教训：清理名单与写入名单要分清）。
+const MANAGED_MCP_IDS = ['mcp-snowluma', 'mcp-snowluma-host', 'mcp-web-search-safe'];
+
+// 历史版本由本脚本代管的兄弟包条目：现在各自安装（../memory-mcp、../rolecard-mcp 的
+// scripts/install-dsh.mjs），这里**主动删除**而不是沿用 —— 留着会变成两份 id 重复
+// （DSH 遇到重复 loader id 会起不来），而且路径可能还指向别处的旧目录。
+const LEGACY_MCP_IDS = ['mcp-memory', 'mcp-rolecard'];
+
+// 旧条目对应的服务名（= 对方 install-dsh.mjs 写的区块标记里的名字）。
+// 用途：如果对方已经接管（区块标记在文件里），就不要删这条 id。
+const LEGACY_SERVICE_LABEL = { 'mcp-memory': 'memory-mcp', 'mcp-rolecard': 'rolecard-mcp' };
 
 function mcpEntries() {
   const node = process.execPath;
@@ -136,10 +144,6 @@ function mcpEntries() {
     'mcp-snowluma': { serverName: 'snowluma', script: path.join(REPO_ROOT, 'src', 'mcp-snowluma-safe.js'), toolCallTimeoutMs: 725000 },
     'mcp-snowluma-host': { serverName: 'snowluma-host', script: path.join(REPO_ROOT, 'src', 'mcp-host-server.js') },
     'mcp-web-search-safe': { serverName: 'web-search-safe', script: path.join(REPO_ROOT, 'src', 'mcp-web-search-safe.js') },
-    // 兄弟包缺失时也要照样写进 patch：缺了会在 DSH 里报"启动失败"，这比
-    // "静默少两个服务、agent 找不到工具"更容易定位。
-    'mcp-memory': { serverName: 'memory', script: path.join(REPO_ROOT, '..', 'memory-mcp', 'src', 'server.mjs') },
-    'mcp-rolecard': { serverName: 'rolecard', script: path.join(REPO_ROOT, '..', 'rolecard-mcp', 'src', 'server.mjs') },
   };
   let out = '# === qq-bridge MCP BEGIN ===\n';
   out += '# 由 scripts/setup-dsh.mjs 维护；这段区块会被整体替换，请勿手工编辑内部条目。\n';
@@ -177,6 +181,14 @@ function prepareCordisPatch() {
   catch (error) { fatal(`failed to parse ${patchFile}; file unchanged: ${error.message}`); }
   if (!Array.isArray(doc)) fatal(`${patchFile} must contain a YAML array; file unchanged`);
   let removed = 0;
+  const legacyRemoved = [];
+  // 已经在「各自安装器」手里的条目不能删：那两个 install-dsh.mjs 会写一段带标记的
+  // 托管区块，标记在就说明这条 id 归它管。否则本脚本每跑一次就把人家装好的服务
+  // 卸一次——而本脚本是「可重复运行」的，用户会经常回来跑。
+  const adoptedByService = (id) => {
+    const label = LEGACY_SERVICE_LABEL[id];
+    return Boolean(label) && original.includes(`# === ${label} MCP BEGIN ===`);
+  };
   const kept = [];
   for (const operation of doc) {
     if (!operation || typeof operation !== 'object' || Array.isArray(operation)) {
@@ -185,6 +197,11 @@ function prepareCordisPatch() {
     if (!Object.hasOwn(operation, 'insert')) { kept.push(operation); continue; }
     if (!Array.isArray(operation.insert)) fatal(`insert must be an array in ${patchFile}; file unchanged`);
     const entries = operation.insert.filter((entry) => {
+      if (LEGACY_MCP_IDS.includes(entry?.id)) {
+        if (adoptedByService(entry.id)) return true;
+        legacyRemoved.push(entry.id);
+        return false;
+      }
       if (!MANAGED_MCP_IDS.includes(entry?.id)) return true;
       removed++;
       return false;
@@ -193,10 +210,10 @@ function prepareCordisPatch() {
     if (entries.length || Object.keys(operation).length > 1) kept.push({ ...operation, insert: entries });
   }
   const text = (kept.length ? `${yaml.dump(kept, { lineWidth: -1, noRefs: true })}\n` : '') + mcpEntries();
-  return { patchFile, original, text, removed };
+  return { patchFile, original, text, removed, legacyRemoved };
 }
 
-function patchCordis({ patchFile, original, text, removed }) {
+function patchCordis({ patchFile, original, text, removed, legacyRemoved }) {
   ensureDir(path.dirname(patchFile));
   // Parsing/serialization normalizes formatting; keep the original text (including comments).
   if (original && original !== text) {
@@ -210,6 +227,14 @@ function patchCordis({ patchFile, original, text, removed }) {
     fs.rmSync(temporary, { force: true });
   }
   log(`cordis.patch.yml: MCP 条目已同步（清理旧条目 ${removed} 条，写入 ${MANAGED_MCP_IDS.length} 条）`);
+  if (legacyRemoved.length) {
+    // 只提醒、不代跑：两个兄弟包可能根本不在本机上（只部署 qq-bridge 的机器很常见）。
+    log(`已移出历史代管的兄弟包条目：${[...new Set(legacyRemoved)].join(', ')}`);
+    log('这两个服务现在各自安装，在上述目录里各跑一次：');
+    log('  cd ../memory-mcp   && npm run install:dsh');
+    log('  cd ../rolecard-mcp && npm run install:dsh');
+    log('（不装也不影响桥接：桥接走的是它们的回环 HTTP。）');
+  }
 }
 
 /**

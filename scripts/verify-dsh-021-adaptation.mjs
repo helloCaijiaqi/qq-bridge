@@ -188,10 +188,11 @@ const managedIds = (setupSrc.match(/const\s+MANAGED_MCP_IDS\s*=\s*\[([^\]]+)\]/)
   .filter(Boolean);
 check('读到 setup-dsh.mjs 的 MANAGED_MCP_IDS', managedIds.length > 0, managedIds.join(', ') || '未读到');
 
-// 兄弟包：平级部署、不属于本仓库，所以路径断言必须分两类；名字写在这里是为了
-// 「改了 id 却忘了同步这里」能立刻响，而不是让一个条目静默漏挂。
+// 兄弟包：平级部署、不属于本仓库，**也不再由本仓库的 setup-dsh 代装**。
+// 它们各自有 scripts/install-dsh.mjs，所以这里断言的是「本仓库不再碰这两个 id」——
+// 名字写死是为了「又把它们加回托管名单」时能立刻响。
 const SIBLING_MCP_IDS = ['mcp-memory', 'mcp-rolecard'];
-check('兄弟包 id 仍在托管名单内', SIBLING_MCP_IDS.every((id) => managedIds.includes(id)), managedIds.join(', '));
+check('兄弟包 id 已移出本仓库的托管名单', SIBLING_MCP_IDS.every((id) => !managedIds.includes(id)), managedIds.join(', '));
 
 check(
   `profile patch MCP 条目与托管名单一致（${managedIds.length} 个）且无重复`,
@@ -201,13 +202,11 @@ check(
 );
 const snowlumaEntry = mcpEntries.find((x) => x.id === 'mcp-snowluma');
 check('mcp-snowluma 带 toolCallTimeoutMs=725000', snowlumaEntry?.config?.toolCallTimeoutMs === 725000);
-const localMcpIds = managedIds.filter((id) => !SIBLING_MCP_IDS.includes(id));
-check('本仓库 MCP 路径指向 qq-bridge', localMcpIds.every((id) => pathOfMcp(id).includes('qq-bridge')),
-  localMcpIds.map((id) => `${id}=${pathOfMcp(id) || '(缺失)'}`).join(' | '));
-check('兄弟包 MCP 路径指向平级目录', SIBLING_MCP_IDS.every((id) => {
-  const expected = path.resolve(ROOT, '..', `${id.replace(/^mcp-/, '')}-mcp`, 'src', 'server.mjs');
-  return pathOfMcp(id) && path.resolve(pathOfMcp(id)) === expected;
-}), SIBLING_MCP_IDS.map((id) => `${id}=${pathOfMcp(id) || '(缺失)'}`).join(' | '));
+check('本仓库 MCP 路径指向 qq-bridge', managedIds.every((id) => pathOfMcp(id).includes('qq-bridge')),
+  managedIds.map((id) => `${id}=${pathOfMcp(id) || '(缺失)'}`).join(' | '));
+check('兄弟包条目不再由本仓库写入（改由各自 npm run install:dsh）',
+  SIBLING_MCP_IDS.every((id) => !mcpIds.includes(id)),
+  SIBLING_MCP_IDS.filter((id) => mcpIds.includes(id)).join(', ') || 'patch 中已无这两个 id');
 
 const pkg = JSON.parse(fs.readFileSync(path.join(DSH_HOME, 'profiles/web/package.json'), 'utf8'));
 check('profile bundles 含 qq-mode-console', pkg.dsh.profile.bundles.includes('qq-mode-console'));
