@@ -4,7 +4,7 @@
 
 > 📌 **来源说明**：本项目基于 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)（MIT）二次开发，
 > 原作者为 **Derpyu520** 及 qq-bridge / QSH 贡献者。本仓库为个人维护的衍生发布，与上游版本不保证同步；
-> 版权与许可声明见 [LICENSE](LICENSE)。项目介绍视频等早期资产仍托管在上游仓库的 Release 附件中。
+> 版权与许可声明见 [LICENSE](LICENSE)；第三方组件与合规边界见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。项目介绍视频等早期资产仍托管在上游仓库的 Release 附件中。
 
 > 🗂️ 文档索引（全部文档一句话说明 + 是否仍然有效）见 **[docs/README.md](docs/README.md)**；仓库目录/脚本命名约定见 **[docs/FOLDER_MAP.md](docs/FOLDER_MAP.md)**。
 >

@@ -1,6 +1,6 @@
 # QQ ↔ DeepSeek Harness Bridge (qq-bridge)
 
-> 📌 **Provenance**: this project is a fork of [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge) (MIT), originally by **Derpyu520** and the qq-bridge / QSH contributors. This repository is a personally maintained derivative release and is not guaranteed to track upstream. See [LICENSE](LICENSE) for copyright and license terms. Assets such as the project intro video remain hosted on the upstream repository's Release attachments.
+> 📌 **Provenance**: this project is a fork of [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge) (MIT), originally by **Derpyu520** and the qq-bridge / QSH contributors. This repository is a personally maintained derivative release and is not guaranteed to track upstream. See [LICENSE](LICENSE) for copyright and license terms, and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for third-party components and compliance boundaries. Assets such as the project intro video remain hosted on the upstream repository's Release attachments.
 
 > Connect QQ messages to DeepSeek Harness (DSH) agents: QQ friends/groups become DSH conversations, and agent replies (including questions and tool approvals) are sent back to QQ.
 
