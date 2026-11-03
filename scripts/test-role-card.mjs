@@ -52,6 +52,19 @@ test('注入文本里不再残留模式标记', () => {
   assert.match(selectRoleText(CARD, 'v2'), /## 三、发言方式\n/);
 });
 
+test('CRLF 卡片（记事本保存 / autocrlf 检出）与 LF 卡片解析结果一致', () => {
+  const crlf = CARD.replace(/\n/g, '\r\n');
+  const headings = (text) => parseRoleSections(text).filter((s) => s.heading).map((s) => `${s.heading}=${s.mode}`);
+  assert.deepEqual(headings(crlf), headings(CARD));
+  // 修复前：标题正则整体失配 → 整张卡退化成一个 all 小节，两代内容互相串场
+  assert.match(selectRoleText(crlf, 'v1'), /空格分隔/);
+  assert.doesNotMatch(selectRoleText(crlf, 'v1'), /qq_send_message/);
+  assert.match(selectRoleText(crlf, 'v2'), /qq_send_message/);
+  assert.doesNotMatch(selectRoleText(crlf, 'v2'), /\[SILENT\]/);
+  assert.equal(selectRoleText(crlf, 'v2'), selectRoleText(CARD, 'v2'));
+  assert.ok(!selectRoleText(crlf, 'v2').includes('\r'), '注入文本不得带 \\r');
+});
+
 test('多种标记写法都认（[v1] / （reserved2） / 2 代）', () => {
   const card = [
     '## A [v1]', '- a',

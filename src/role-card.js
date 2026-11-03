@@ -43,7 +43,14 @@ function stripModeTags(heading) {
 export function parseRoleSections(text) {
   const sections = [];
   let current = null;
-  for (const line of String(text ?? '').split('\n')) {
+  // 先把 CRLF / CR 统一成 LF 再切行。Windows 记事本（以及默认 autocrlf=true 的 git 检出）
+  // 保存的卡片是 CRLF：只按 '\n' 切，每行行尾会留下 '\r'，而下面标题正则的 `.*` 里
+  // `.` 不匹配 `\r`、`$` 也不认 `\r` 之前的行尾 —— 整个标题都匹配不上，
+  // 于是每行都被当成正文，整张卡退化成「单个 all 小节」：
+  //   ① 〔一代〕/〔二代〕筛选彻底失效，两代专属内容互相串场（一代卡会注入 [SILENT] 之类的指令）；
+  //   ② 注入文本里带着 \r，模型看到的是脏文本。
+  // 统一换行后，CRLF 与 LF 卡片的解析结果逐字节一致。
+  for (const line of String(text ?? '').replace(/\r\n?/g, '\n').split('\n')) {
     const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (!heading) {
       if (!current) {
@@ -90,7 +97,8 @@ export function roleSectionReport(text, mode) {
 
 /** 统计各模式的字符数，用于控制台提示「去掉另一模式的专属小节后还剩多少」。 */
 export function roleCharStats(text) {
-  const source = String(text ?? '');
+  // 与解析口径对齐：CRLF 卡片按 LF 计数，避免 total 里多算每行的 '\r'
+  const source = String(text ?? '').replace(/\r\n?/g, '\n');
   const sections = parseRoleSections(source);
   const sum = (list) => list.reduce((total, section) => total + section.lines.join('\n').trim().length, 0);
   return {
