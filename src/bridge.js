@@ -29,6 +29,8 @@ import { hardenDir, manualDirCommand } from './state-acl.mjs';
 import { extractForwardIds, forwardIdFromData, sanitizeForwardId, formatForwardResponse } from './forward.js';
 import { resolvePriceTable } from './model-prices.js';
 import { createTokenLedger } from './token-ledger.js';
+import { createMemoryClient } from './memory-client.js';
+import { createRolecardClient } from './rolecard-client.js';
 import {
   loadSlang,
   saveSlang,
@@ -1411,6 +1413,46 @@ async function main() {
   let slangLearnerSessionId = null;
   let slangTaskChain = Promise.resolve();
 
+  // ── 外部服务取段（memory-mcp / rolecard-mcp） ────────────────────────────
+  // 黑话与记忆归 memory-mcp、人格归 rolecard-mcp。两者都是**可选**的：服务没起、
+  // 报错或库为空时，下面所有注入点都会自然回落到本地实现，桥接行为与改造前一致。
+  // 这样设计是为了能灰度切换 —— 外部服务出问题时不需要回滚代码，取不到段就当它不存在。
+  const memoryClient = createMemoryClient({ logger: (m) => log(m) });
+  const rolecardClient = createRolecardClient({ logger: (m) => log(m) });
+  const EXTERNAL_BLOCKS_TTL_MS = 30 * 1000;
+  const externalBlocks = { slang: '', roleV1: '', roleV2: '', memory: new Map(), at: 0 };
+  // 记忆是**按会话**的：全局段（黑话 / 人格）可以共用一份缓存，记忆必须按 key 分开刷，
+  // 否则会拿 A 群的记忆去填 B 群的提示词。
+  const externalMemoryAt = new Map();
+
+  async function refreshExternalBlocks(key) {
+    const jobs = [];
+    const now = Date.now();
+    if (now - externalBlocks.at > EXTERNAL_BLOCKS_TTL_MS) {
+      jobs.push((async () => {
+        const [role, slang] = await Promise.all([
+          rolecardClient.renderBoth({ maxChars: roleInjectMaxChars }),
+          memoryClient.renderSlang({ maxChars: cfg.slang?.injectMax ?? 8 })
+        ]);
+        externalBlocks.roleV1 = role?.v1 ?? '';
+        externalBlocks.roleV2 = role?.v2 ?? '';
+        externalBlocks.slang = slang ?? '';
+        externalBlocks.at = Date.now();
+      })());
+    }
+    if (key && now - (externalMemoryAt.get(key) ?? 0) > EXTERNAL_BLOCKS_TTL_MS) {
+      jobs.push((async () => {
+        const { memory } = await memoryClient.renderBlocks({ key, maxChars: 1500 });
+        if (memory) externalBlocks.memory.set(key, memory);
+        else externalBlocks.memory.delete(key);
+        externalMemoryAt.set(key, Date.now());
+      })());
+    }
+    if (!jobs.length) return;
+    // 取段失败绝不能影响投递：client 内部已做熔断与告警，这里只兜住意外的同步异常。
+    await Promise.all(jobs).catch((error) => log(`外部段落刷新失败：${error?.message ?? error}`));
+  }
+
   // ── 表情包体系（二代仿真）本地知识库 ────────────────────────────────────
   // 库文件损坏/读不动时**不能当成空库继续**：下面任何一次 saveStickerStoreSafe 都会把
   // 「空库」写回去，把 AI 学到的 localNote/tags/usage 永久清零。读失败就显式降级为
@@ -2342,7 +2384,9 @@ async function main() {
     const timeLine = `【当前时间】${now.toLocaleString('zh-CN', { hour12: false })}（${Intl.DateTimeFormat().resolvedOptions().timeZone}）`;
     const parts = [timeLine];
     if (cfg.slang?.enabled !== false) {
-      const block = buildSlangContext(slangEntries, cfg.slang?.injectMax ?? 8);
+      // 外部【黑话】段优先：黑话的归属地是 memory-mcp。取不到（服务没起 / 库为空）时
+      // 回落到本地库 —— 空串代表"外部没有可用内容"，不是"黑话表为空"，不能拿它覆盖本地。
+      const block = externalBlocks.slang || buildSlangContext(slangEntries, cfg.slang?.injectMax ?? 8);
       if (block) parts.push(block);
     }
     return parts.join('\n\n') + '\n\n' + promptText;
@@ -4694,6 +4738,9 @@ async function main() {
           for (const [flag, name] of Object.entries(toolMap)) {
             if (tools[flag] !== false && !(stickerToolFlags.has(flag) && !stickerEnabled())) enabledTools.push(name);
           }
+          // 二代入口是**异步**的，可以在这里现取外部段落；取段失败各 client 返回空串，
+          // 下面的 || 会自然回落到本地实现，响应形状不变。
+          await refreshExternalBlocks(key);
           sendJson({
             ok: true,
             key,
@@ -4717,12 +4764,12 @@ async function main() {
             recentCount: st.recentMessages.length,
             currentWakeConfig: st.wakeConfig,
             wakeSafety: computeWakeSafetyV2(st.wakeConfig),
-            memory: formatMemoryV2(st),
+            memory: externalBlocks.memory.get(key) || formatMemoryV2(st),
             participation: formatParticipationV2(st),
             slang: {
               enabled: cfg.slang?.enabled !== false,
               entries: confirmedSlangListV2(),
-              block: buildSlangContext(slangEntries, cfg.slang?.injectMax ?? 8)
+              block: externalBlocks.slang || buildSlangContext(slangEntries, cfg.slang?.injectMax ?? 8)
             },
             stickers: {
               enabled: cfg.socialV2?.sticker?.enabled !== false,
@@ -6638,6 +6685,9 @@ async function main() {
           if (req.headers['x-agent-token'] && !v2ToolEnabled('memory')) { sendJson({ ok: false, error: '工具未启用：qq_memory_append' }, 403); return; }
           const st = getSocialV2State(key);
           appendMemoryV2(st, category, content, extra);
+          // 镜像一份到 memory-mcp：外部服务在灰度期就有真实数据可用于产出【记忆】段。
+          // 失败只记日志（client 内部有熔断），本地状态仍然是权威，响应形状不变。
+          void memoryClient.mirrorAppend({ key, category, content, extra });
           sendJson({ ok: true, key, category, content, memory: formatMemoryV2(st) });
           return;
         }
@@ -6757,6 +6807,7 @@ async function main() {
             delete st.memberImpressions[target];
           }
           saveSocialV2State();
+          void memoryClient.mirrorRemove({ key, category, content, target });
           sendJson({ ok: true, key, category, memory: formatMemoryV2(st) });
           return;
         }
@@ -6774,6 +6825,7 @@ async function main() {
           if (!category || category === 'pendingThought') st.pendingThoughts = [];
           if (!category || category === 'memberImpression') st.memberImpressions = {};
           saveSocialV2State();
+          void memoryClient.mirrorClear({ key, category });
           sendJson({ ok: true, key, category: category || 'all', memory: formatMemoryV2(st) });
           return;
         }
@@ -9109,6 +9161,9 @@ async function main() {
 
   // 实际的 DSH prompt 投递（不再直接对外暴露，统一走 promptQueues 串行队列）。
   async function deliverPromptNow(key, promptText, opts = {}) {
+    // 投递前现取一次外部段落（记忆 / 黑话 / 人格）：这里是热路径上最早能 await 的地方，
+    // 下面的 withSlangContext 等同步注入点直接读缓存，不必为了外部服务改同步调用链。
+    await refreshExternalBlocks(key);
     if (!isSessionAllowedInCurrentMode(key)) throw new Error(`当前模式不允许会话 ${key}`);
     // Recheck queued wakes at dispatch time: no model call while paused/disabled
     // and no reserved2 prompt leaking into an ordinary chat after a mode switch.
@@ -9421,6 +9476,16 @@ async function main() {
     startSocialLoop();
   }
 
+  // 外部段落的兜底刷新：只靠投递时刷新不够 —— 纯定时器触发的主动开场（建群摘要投喂、
+  // 主动开话题等同步取人格的入口）在「刚启动」和「长时间没消息」两种情况下都会读到空缓存，
+  // 这里再挂一个低频周期刷新，把人格 / 黑话这类全局段保持在最新。
+  if (memoryClient.enabled || rolecardClient.enabled) {
+    refreshExternalBlocks(null).catch(() => {});
+    const externalBlocksTimer = setInterval(() => { refreshExternalBlocks(null).catch(() => {}); }, EXTERNAL_BLOCKS_TTL_MS);
+    if (typeof externalBlocksTimer.unref === 'function') externalBlocksTimer.unref();
+    log(`外部服务取段已开启：memory-mcp=${memoryClient.baseUrl} rolecard-mcp=${rolecardClient.baseUrl}`);
+  }
+
   // 当前角色扮演提示：读 state/current-role.json + roles/<角色>.md，
   // 由桥接注入到 QQ 群消息（群友无法通过对话修改，只能由管理端写该文件）。
   // 缓存 key 为两个文件的 mtime，mtime 未变时直接返回，避免每次同步读文件。
@@ -9464,7 +9529,8 @@ async function main() {
     return selected.length > roleInjectMaxChars ? truncateText(selected, roleInjectMaxChars) : selected;
   }
   function currentRoleHint() {
-    return roleHintForMode('v1');
+    // 外部【人格】段优先（rolecard-mcp），取不到时回落本地人格卡。
+    return externalBlocks.roleV1 || roleHintForMode('v1');
   }
 
   // 二代仿真模式专用角色提示：去掉一代的 [SILENT] / 空格分句等状态机指令，避免与工具协议冲突。
@@ -9555,6 +9621,7 @@ async function main() {
   }
 
   function currentRoleHintV2() {
+    if (externalBlocks.roleV2) return externalBlocks.roleV2;
     // 先按 〔二代〕/〔一代〕 标记筛小节；下面的逐行过滤只是给「没标记的老卡片」兜底。
     const raw = roleHintForMode('v2');
     if (!raw) return '';
@@ -10296,7 +10363,8 @@ async function main() {
     const identityLine = selfIdentityTextV2();
     const st = getSocialV2State(key);
     const tokenLine = `【会话令牌】${st.agentToken}（调用二代状态工具时请在参数中带上此令牌）\n\n`;
-    const memoryText = formatMemoryV2(st);
+    // 外部【记忆】段优先（memory-mcp 带衰减与遗忘权重），取不到时回落本地社交状态。
+    const memoryText = externalBlocks.memory.get(key) || formatMemoryV2(st);
     const memoryLine = memoryText ? `${memoryText}\n\n` : '';
     // 注意：黑话表不在这里注入，deliverPromptNow 的 withSlangContext 会统一注入，
     // 避免唤醒 prompt 出现两份黑话表。
@@ -11120,6 +11188,8 @@ async function main() {
       }
       throw error;
     }
+    // 主消息路径：同样在这里现取一次外部段落（见 deliverPromptNow 里的说明）。
+    await refreshExternalBlocks(key);
     let content = [{ type: 'text', text: withSlangContext(promptText) }];
     if (Array.isArray(mediaList) && mediaList.length > 0) {
       const imageParts = await resolveMediaList(mediaList);

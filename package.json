@@ -46,6 +46,8 @@
     "test:session-retire:e2e": "node scripts/test-dsh-session-retire.mjs",
     "verify:persona": "node scripts/verify-persona-config.mjs",
     "test:mcp-servers": "node scripts/test-mcp-servers-stdio.mjs",
+    "check:mcp-health": "node scripts/check-mcp-health.mjs",
+    "test:external-clients": "node scripts/test-external-clients.mjs",
     "test:plugin": "node scripts/test-qq-mode-plugin.mjs",
     "test:setup-idempotent": "node scripts/test-setup-dsh-idempotent.mjs",
     "test:mux-reconnect": "node scripts/test-mux-reconnect.mjs",

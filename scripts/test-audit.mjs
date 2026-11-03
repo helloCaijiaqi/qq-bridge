@@ -66,6 +66,9 @@ const tests = [
   //   · 静默检测不得冒充 hook 检测（心跳是 SnowLuma 本地定时器无条件发的）；
   //   · 客户端库版本不得低于 bot_status 出现的版本。
   'test-snowluma-upstream-health.mjs',
+  // 外部服务客户端（memory-mcp / rolecard-mcp）：会话 key 映射、取段降级、
+  // 熔断、以及写入镜像的删除/清空一致性。全本地桩，不依赖外部进程。
+  'test-external-clients.mjs',
 ];
 let failed = 0;
 for (const test of tests) {

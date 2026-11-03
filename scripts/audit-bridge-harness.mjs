@@ -21,9 +21,31 @@ import * as tokenLedger from '../src/token-ledger.js';
 import * as voiceLib from '../src/send-voice-lib.js';
 import * as presetPrompt from '../src/preset-prompt.js';
 import * as stateAcl from '../src/state-acl.mjs';
+import { createMemoryClient as realCreateMemoryClient } from '../src/memory-client.js';
+import { createRolecardClient as realCreateRolecardClient } from '../src/rolecard-client.js';
 import { unwrap, createTurnCollector } from '../src/dsh-client.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+
+// 「外部服务缺席」时的客户端桩：所有取段返回空 —— 桥接必须因此回落到本地实现，
+// 行为与接外部服务之前完全一致（这也正是灰度回退的样子）。
+function stubExternalClient() {
+  return {
+    enabled: false,
+    baseUrl: '',
+    available: () => false,
+    toSessionId: () => null,
+    health: async () => ({ ok: false, reason: 'stub' }),
+    renderBlocks: async () => ({ memory: '', slang: '' }),
+    renderSlang: async () => '',
+    renderBlock: async () => '',
+    renderBoth: async () => ({ v1: '', v2: '' }),
+    mirrorAppend: async () => null,
+    mirrorRemove: async () => 0,
+    mirrorClear: async () => 0
+  };
+}
+
 export async function bridgeHarness({ config = {}, savedState, files = {}, globals = {} } = {}) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'qq-audit-bridge-'));
   fs.mkdirSync(path.join(temp, 'src'));
@@ -188,6 +210,12 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...slang, ...sticker,
     ...modelPrices, ...tokenLedger, ...voiceLib, ...stateAcl, ...presetPrompt,
+    // 外部服务（memory-mcp / rolecard-mcp）客户端默认是**关闭的桩**：审计测试必须自足，
+    // 不能去连 127.0.0.1 的真实端口（连不上会拖慢每条消息路径，连上了又依赖外部进程）。
+    // 客户端自身的行为由 scripts/test-external-clients.mjs 覆盖；这里只保证桥接在
+    // 「外部服务缺席」时与改造前完全一致。要测联动就用 globals 传真实实现。
+    createMemoryClient: (opts = {}) => (opts.__real ? realCreateMemoryClient(opts) : stubExternalClient()),
+    createRolecardClient: (opts = {}) => (opts.__real ? realCreateRolecardClient(opts) : stubExternalClient()),
     // 桥接的出图出口会调归一化（体积/动图抽帧）：VM 里必须能拿到这几个函数。
     normalizeImageForModel: mediaNormalize.normalizeImageForModel,
     sniffImage: mediaNormalize.sniffImage,
