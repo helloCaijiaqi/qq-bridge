@@ -9,11 +9,11 @@
 1. **克隆/获取仓库**：
 
    ```bash
-   git clone https://github.com/Derpyu520/qq-bridge.git
+   git clone https://github.com/helloCaijiaqi/qq-bridge.git
    cd qq-bridge
    ```
 
-   > 默认分支 `main` 即当前版本 **v0.1.5**（适配 DSH 0.1.5-rc.1），clone 下来无需切换分支。
+   > 默认分支 `main` 即当前版本 **v0.2.1-r1**（适配 DSH 0.2.1-rc.2），clone 下来无需切换分支。
 
 2. **安装依赖**：
 

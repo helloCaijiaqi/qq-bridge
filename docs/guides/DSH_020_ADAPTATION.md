@@ -522,7 +522,6 @@ r4 已修：MCP 侧统一走 `errorText()`（对象 → `JSON.stringify` 或取 
 
 ## 附：v0.2.0-r4 主要改动
 
-> 完整版见 [Release v0.2.0-r4](https://github.com/Derpyu520/qq-bridge/releases/tag/v0.2.0-r4)。
 > 本附录只记录「改了什么 / 为什么」的要点，便于在仓库内追溯。
 
 ### J.1 图片/表情（含动图）链路

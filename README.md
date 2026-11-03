@@ -2,6 +2,10 @@
 
 **English**: [README.en.md](README.en.md) | **中文**: [README.md](README.md)
 
+> 📌 **来源说明**：本项目基于 [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge)（MIT）二次开发，
+> 原作者为 **Derpyu520** 及 qq-bridge / QSH 贡献者。本仓库为个人维护的衍生发布，与上游版本不保证同步；
+> 版权与许可声明见 [LICENSE](LICENSE)。项目介绍视频等早期资产仍托管在上游仓库的 Release 附件中。
+
 > 🗂️ 文档索引（全部文档一句话说明 + 是否仍然有效）见 **[docs/README.md](docs/README.md)**；仓库目录/脚本命名约定见 **[docs/FOLDER_MAP.md](docs/FOLDER_MAP.md)**。
 >
 > 🔒 QQ 会话的权限边界与安全承诺见 **[RULES.md](RULES.md)**。
@@ -15,10 +19,7 @@
 > 只存在于内存、不再落盘，旧版「从 guard 日志里读 token」的方式已失效。agent preset 是 DSH 0.1.7 起的
 > `@deepseek-ai/dsh-agent-preset` Cordis 行（`~/.dsh/.agent-presets/` 目录机制已废）。协议代次
 > （Cookie 鉴权 / 斜杠 RPC / `/api/remote.mux` 事件流）自 DSH `0.1.2-alpha.1` 起引入，与更早的点号
-> endpoint 协议不兼容 —— **DSH `0.1.1-rc.2` 及更早**请改用 tag
-> [`v0.1.0`](https://github.com/Derpyu520/qq-bridge/releases/tag/v0.1.0)；**DSH 0.1.5-rc.1** 用
-> [`v0.1.5`](https://github.com/Derpyu520/qq-bridge/releases/tag/v0.1.5)；**DSH 0.1.7-rc.2** 用
-> [`v0.1.7`](https://github.com/Derpyu520/qq-bridge/releases/tag/v0.1.7)。
+> endpoint 协议不兼容 —— 本仓库只维护当前版本，**DSH `0.1.7` 之前的内核不再提供适配分支**。
 >
 > v0.2.0 修的主要是**会话待处理队列读不出来**：桥接退役/重置 QQ 会话时要先清掉 DSH 侧没跑的队列，
 > 而那段解析认的是一个**从来不存在的字段**（`session/control` baseline 的 `value.queues[<id>]`）——
@@ -35,7 +36,7 @@
 > **r4 主要改动**：QQ 表情包/动图链路（表情 CDN 优先、`emoji_id` 兜底、DNS 多地址故障切换）、
 > 联网搜索改用与 DSH 同源的 DeepSeek 搜索（Bing 仅兜底）、`qq_wait_for_messages` 改 5 分钟长轮询、
 > 控制台切模式被 5 秒轮询改回去、回合永久「繁忙」、机器人身份未注入等 issue 修复，外加一轮整体体检。
-> 逐条见 [**Release v0.2.0-r4**](https://github.com/Derpyu520/qq-bridge/releases/tag/v0.2.0-r4)。
+> 逐条见 [docs/guides/DSH_020_ADAPTATION.md](docs/guides/DSH_020_ADAPTATION.md)。
 >
 > **v0.2.1-r1 主要改动**：适配 DSH 0.2.1-rc.2。修掉一处 **P0**——persona 里的 `{{cwd}}`
 > 提示词变量在 0.2.1 被删除，导致**每个回合在系统提示词装配阶段直接 error、模型一次都不跑**
@@ -53,9 +54,9 @@ QQ 消息 ──► SnowLuma（OneBot v11 WS）──► 本桥接进程 ──�
 
 ## 项目展示
 
-📽️ [AI 仿真群友 - 项目介绍视频](https://github.com/Derpyu520/qq-bridge/releases/download/v0.1.5/project-intro.mp4)（约 11 MB）
+📽️ [AI 仿真群友 - 项目介绍视频](https://github.com/Derpyu520/qq-bridge/releases/download/v0.1.5/project-intro.mp4)（约 11 MB，附件托管在上游仓库）
 
-> 视频改由 **Release 附件**托管，不在仓库里——只想安装桥接的人不必再下载这 11 MB（它此前占整个仓库体积的 88%）。
+> 视频以 **Release 附件**形式托管，不在本仓库里——只想安装桥接的人不必再下载这 11 MB。
 
 ## 架构
 
@@ -166,7 +167,7 @@ node scripts/setup-dsh.mjs
 
 2. **装桥接并复制配置**
    ```bash
-   git clone https://github.com/Derpyu520/qq-bridge.git
+   git clone https://github.com/helloCaijiaqi/qq-bridge.git
    cd qq-bridge
    npm install
    ```
