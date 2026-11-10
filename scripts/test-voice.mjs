@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import {
   AUDIO_EXTS, describeAudio, formatBytes, formatDuration,
   inspectAudio, isAudioFile, listAudioFiles, parseTargetKey, resolveAudioSource
-} from '../src/send-voice-lib.js';
+} from '../src/media/send-voice-lib.js';
 // 独立发语音工具在仓库上一级（不在本仓库里）：位置解析与"不在时怎么跳过"走共享口径。
 import { hasVoiceTool, skipVoiceTool, voiceToolPath } from './voice-tool-locator.mjs';
 
@@ -139,16 +139,8 @@ console.log('## 配置项（AI 发语音默认关闭，等语音库准备好再�
   ok(/cfg\.socialV2\.voice = \{\s*\n\s*enabled: false,/.test(bridgeSrc), 'bridge.js 里 voice 默认 enabled: false');
 }
 
-console.log('## MCP 工具与 bridge 路由');
+console.log('## bridge 路由');
 {
-  const mcp = fs.readFileSync(path.join(ROOT, 'src', 'mcp-snowluma-safe.js'), 'utf8');
-  ok(mcp.includes("'qq_send_voice'"), 'MCP 注册 qq_send_voice');
-  ok(mcp.includes("'qq_list_voices'"), 'MCP 注册 qq_list_voices');
-  ok(mcp.includes("qq_send_voice: 'sendVoice'"), 'qq_send_voice 受 sendVoice 开关控制');
-  ok(mcp.includes("qq_list_voices: 'sendVoice'"), 'qq_list_voices 受 sendVoice 开关控制');
-  const voiceBlock = mcp.slice(mcp.indexOf("'qq_send_voice'"), mcp.indexOf("'qq_list_voices'"));
-  ok(voiceBlock.includes('/api/socialV2/send-voice'), 'qq_send_voice 调 /api/socialV2/send-voice');
-  ok(!voiceBlock.includes("绝对路径的音频"), 'qq_send_voice 不暴露绝对路径参数');
 
   const bridge = fs.readFileSync(path.join(ROOT, 'src', 'bridge.js'), 'utf8');
   for (const s of [
@@ -171,7 +163,6 @@ console.log('## 安全边界（AI 通道来源限制）');
   const sendRoute = bridge.slice(bridge.indexOf("url.pathname === '/api/socialV2/send-voice'"), bridge.indexOf("url.pathname === '/api/socialV2/send-sticker'"));
   ok(sendRoute.includes('v2SessionAllowed(key)'), '语音发送校验会话白名单');
   ok(sendRoute.includes('agentTokenOk(key, token)'), '语音发送校验 agent token');
-  ok(sendRoute.includes('shouldBlockSilentReply(key)'), '语音发送尊重静默模式');
   ok(sendRoute.includes('voiceBudgetCheck'), '语音发送走语音限流');
 }
 
@@ -193,19 +184,6 @@ if (!hasVoiceTool()) {
   ok(fs.existsSync(voiceToolPath('发语音.cmd')), 'voice-tool/发语音.cmd 双击启动器存在');
   ok(fs.existsSync(voiceToolPath('config.example.json')), 'voice-tool/config.example.json 存在');
   ok(fs.existsSync(path.join(ROOT, '..', '发语音-图形界面.cmd')), '上级 发语音-图形界面.cmd 启动器存在');
-}
-
-console.log('## preset 人设已描述语音能力（否则 AI 不知道自己会说话）');
-{
-  const preset = fs.readFileSync(path.join(ROOT, 'dsh', 'agent-presets', 'qq-chat-v2', 'agent.cordis.yml'), 'utf8');
-  ok(preset.includes('qq_send_voice'), 'qq-chat-v2 人设提到 qq_send_voice');
-  ok(preset.includes('qq_list_voices'), 'qq-chat-v2 人设提到 qq_list_voices');
-  ok(preset.includes('verified=true'), '人设说明 verified=true 的语义');
-  ok(/不要假装发了语音/.test(preset), '人设禁止假装发语音');
-  // DSH 0.1.7 起守卫的权威实现只有一份，在 qq-agent-presets bundle 里
-  // （dsh/agent-presets/<preset>/qq-tool-restrict.mjs 只是 re-export 壳）。
-  const restrict = fs.readFileSync(path.join(ROOT, 'plugins', 'qq-agent-presets', 'qq-tool-restrict.mjs'), 'utf8');
-  ok(restrict.includes("'mcp__snowluma__'"), 'preset 白名单以前缀放行 mcp__snowluma__*（覆盖语音工具）');
 }
 
 console.log('## 控制台契约');

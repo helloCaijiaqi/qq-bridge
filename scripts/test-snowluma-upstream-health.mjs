@@ -45,7 +45,7 @@ test('SnowLuma 客户端库不低于 bot_status 出现的版本（1.14.17）', (
     return m ? Number(m[1]) * 1e6 + Number(m[2]) * 1e3 + Number(m[3]) : null;
   };
   const min = num('1.14.17');
-  for (const name of ['@snowluma/sdk', '@snowluma/mcp']) {
+  for (const name of ['@snowluma/sdk']) {
     const declared = num(pkg.dependencies?.[name]);
     assert.ok(declared !== null, `${name} 必须在 dependencies 里声明`);
     assert.ok(

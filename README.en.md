@@ -1,157 +1,89 @@
-# QQ ↔ DeepSeek Harness Bridge (qq-bridge)
+# qq-bridge — QQ adapter for agent-gateway
 
-> 📌 **Provenance**: this project is a fork of [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge) (MIT), originally by **Derpyu520** and the qq-bridge / QSH contributors. This repository is a personally maintained derivative release and is not guaranteed to track upstream. See [LICENSE](LICENSE) for copyright and license terms, and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for third-party components and compliance boundaries. Assets such as the project intro video remain hosted on the upstream repository's Release attachments.
+**English**: [README.en.md](README.en.md) | **中文**: [README.md](README.md)
 
-> Connect QQ messages to DeepSeek Harness (DSH) agents: QQ friends/groups become DSH conversations, and agent replies (including questions and tool approvals) are sent back to QQ.
+> Based on [Derpyu520/qq-bridge](https://github.com/Derpyu520/qq-bridge) (MIT), personally maintained fork; see [LICENSE](LICENSE) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+> Permission boundaries and security promises: [RULES.md](RULES.md) (Chinese). Repository map and script conventions: [docs/FOLDER_MAP.md](docs/FOLDER_MAP.md) (Chinese).
 
-> ⚠️ **Current release `v0.2.1-r1`, targets DSH 0.2.1-rc.2** (also compatible with 0.2.0-rc.2; verified item by item on both — run `npm run verify:adaptation`). It uses the persistent local signing key to **mint the session Cookie offline**, slash RPC endpoints and the `/api/remote.mux` event stream — a protocol generation introduced in DSH `0.1.2-alpha.1`, incompatible with the older dot-endpoint protocol. Reading the launch token out of the old guard logs has not worked since DSH 0.1.7 (the token is generated per process and never written to disk). Agent presets are `@deepseek-ai/dsh-agent-preset` Cordis rows since DSH 0.1.7 (the `~/.dsh/.agent-presets/` directory mechanism is gone). This repository maintains only the current version; kernels older than **DSH 0.1.7** are no longer supported.
->
-> **r4 highlights**: sticker/animated-emoji pipeline (CDN first, `emoji_id` fallback, multi-address DNS failover), web search now reuses DSH's own DeepSeek search backend (Bing only as fallback), `qq_wait_for_messages` long-polling past the 300 s undici timeout, plus fixes for the mode-switch rollback, permanent "busy" turns, missing self-identity injection and a full-project audit. Details: [docs/guides/DSH_020_ADAPTATION.md](docs/guides/DSH_020_ADAPTATION.md).
->
-> **v0.2.1-r1 highlights**: DSH 0.2.1-rc.2 adaptation. Fixes a **P0** — the `{{cwd}}` prompt variable used by both QQ presets was removed in DSH 0.2.1, so *every* turn failed during system-prompt assembly before the model ran (QQ showed it as "no reply at all"). Also adds the newly global `working_directory` tool plus the terminal / session-query / plugin-market families to the safety guard. Details: [docs/guides/DSH_021_ADAPTATION.md](docs/guides/DSH_021_ADAPTATION.md).
->
-> The default branch `main` **is** this version — a plain `git clone` gets it, no branch switching needed.
+Turn QQ messages into agent turns through **agent-gateway**: inbound QQ traffic is delivered to the gateway via `POST /v1/inbound`; the agent acts on QQ **only** through gateway action callbacks on `POST /v1/actions`. The bridge is a pure QQ adapter — it never talks to an agent runtime directly and ships no MCP servers of its own. The "second-generation simulation" behavior (AI reads messages, sends, waits, and schedules wake-ups via tools) is the only behavior; there are no mode switches.
 
-For the detailed Chinese guide, see **[docs/guides/PROJECT_GUIDE.md](docs/guides/PROJECT_GUIDE.md)**.
-The documentation index (one line per doc, with "still current?" notes) is **[docs/README.md](docs/README.md)**;
-the repository/folder and script-naming conventions are in **[docs/FOLDER_MAP.md](docs/FOLDER_MAP.md)**.
+```
+QQ message ──► SnowLuma (OneBot v11 WS) ──► this bridge ──► agent-gateway /v1/inbound ──► agent
+                                                ▲                                        │
+                                                └──── /v1/actions (tool callbacks) ◄── gateway
+```
+
+> **Gateway-only form (no fallback)**:
+> - `gateway.url` / `gateway.secret` / `gateway.adapterId` in `config.json` are **mandatory — startup fails fast** when missing (never "running but silently dropping messages").
+> - Conversation routing is decided by the gateway (`GATEWAY_CONVERSATIONS`); the bridge-side `allow`/`deny` lists are a second gate applied to every send action.
+> - Outbound turn text never auto-delivers: the agent must call `mcp__agent-gateway__chat_qq_send_*` tools.
 
 ## Architecture
 
-```
-QQ messages ──► SnowLuma (OneBot v11 WS) ──► qq-bridge ──► DSH Web API (127.0.0.1:3080/api)
-                                                    ▲                      │
-                                                    └── agent replies / questions / approvals ┘
-```
+- **QQ side**: `SnowLumaWebSocketClient` from `@snowluma/sdk` (OneBot v11 WebSocket client with auto-reconnect and token/endpoint self-healing)
+- **Gateway side**: `src/gateway/` — HMAC-signed client, actions manifest (`actions-manifest.json` + schema), action-to-QQ mapping
+- **Second-generation simulation**: AI uses tools (`chat_qq_get_unread`, `chat_qq_get_recent`, `chat_qq_send_message`, `chat_qq_wait`, `chat_qq_set_wake`, …) to read, speak, wait, sleep, and wake autonomously (primary names are generated by the gateway as `chat_<platform>_<action>`; the old `qq_*` / `chat_*` names remain as compatibility aliases); the bridge owns watermarks, wake rate limits, send pacing, and the allowlist hard gate
+- **Local console**: web UI at `http://127.0.0.1:3100`, four pages — Overview (gateway / SnowLuma upstream health / AI session state / activity log), Access & Security (allowlist, security settings, state-dir ACL, console token), Debug & Ops (test send, simulation controls & tool switches, wake parameters, initial prompts, voice debug, workspace reset), Reference (gateway action catalog). Light/dark themes follow the system unless chosen. Token-gated (`consoleToken`).
+- **Media**: sticker/animated-emoji pipeline (CDN first, `emoji_id` fallback), SSRF-hardened transport, 8 MB / 64 MP / 5 images per message by default
+- **Voice**: AI voice sending is restricted to the local voice library (`socialV2.voice.dir`, default `audio/`) with duration/size/rate caps; disabled by default
 
-- **QQ side**: `@snowluma/sdk` provides the OneBot v11 WebSocket client.
-- **DSH side**: adapted for DSH 0.1.2+ and **re-verified on 0.2.1-rc.2** — session Cookie minted from the persistent local signing key, `/api/<namespace>/<method>` slash RPC, and `/api/remote.mux` + `session/follow` event stream (the pending queue is read from `value.projections[<id>].values.inbox`, with the unary `session/projections` RPC as the primary path). The per-session model is pinned by the bridge via `session.selectModel` from `config.json`'s `dsh.model` (default `deepseek-flash` = DeepSeek-V41-Flash, multimodal).
-- **Agent tools**: three bundled MCP servers expose a restricted QQ toolset (`qq_status`, `qq_list_groups`, `qq_get_group_history`, `qq_send_group_message`, `qq_reply`, etc.), a read-only host probe (`snowluma_status` only), and a read-only `web_search` / `web_fetch` pair with SSRF protection.
-  ⚠️ **`start_snowluma` / `stop_snowluma` (and `snowluma.allowProcessControl`) were removed in v0.1.5**: SnowLuma EULA §5.4 requires prior written permission to deploy its proprietary native components through automated scripts. This program only probes, never deploys — installing, starting and scanning SnowLuma is always up to you. See [LICENSE](LICENSE) and [RULES.md](RULES.md).
-- **Console**: a local web console at `http://127.0.0.1:3100`, organised into ten task-based pages (Overview, Sessions & Approvals, Persona, Social v2, Social v1, Slang, Usage & Cost, Access & Security, Operations, Tool Reference) with cross-page feature search and a **light / dark theme** (one-click toggle in the header; follows the OS preference until you choose), for mode switching, role management, whitelist/admin settings, slang management, memory, stickers and more. The Persona page manages roles (view/edit/rename/duplicate/delete the prompt of each persona), shows and edits both prompt layers separately — the **simulation prompt** built into the preset (tool/behaviour protocol; synced to DSH, restart required) and the **persona prompt** (`roles/*.md`; applied immediately) — and sets the **DSH reasoning effort** (`max` by default, `high`/`low` selectable). The **Usage & Cost** page shows real-time token consumption and its price in CNY, broken down per group/friend and per conversation turn (see [docs/guides/TOKEN_USAGE_CONSOLE.md](docs/guides/TOKEN_USAGE_CONSOLE.md)).
+## Prerequisites
 
-## Features
+1. A running agent-gateway (default `http://127.0.0.1:7190`) with this adapter registered (`adapterId` / `secret` matching the bridge config)
+2. A running SnowLuma with OneBot WebSocket and HTTP API enabled (default `ws://127.0.0.1:3001` / `http://127.0.0.1:3000`)
+3. Node.js ≥ 22.13
 
-- Bridges QQ group/private messages to DSH agent sessions.
-- Social simulation mode ("simulated group friend") with idle/active/probing/exiting states.
-- Space-based message splitting for more natural multi-message replies.
-- Whitelist/blacklist access control, fail-closed by default.
-- Sensitive text audit prevents paths/credentials from being sent to QQ.
-- MCP tools for reading group history/members, sending messages, replying with quotes, and (in `reserved2`) full simulated-group-friend tooling.
-- Slang/network-expression learning with human confirmation.
-- Lightweight memory system for active topics, pending thoughts and member impressions.
-- Sticker library integration with AI-friendly sticker usage.
-
-## Requirements
-
-- Node.js >= 22.13
-- Running DeepSeek Harness Web (default `http://127.0.0.1:3080`)
-- Running SnowLuma with OneBot v11 WebSocket and HTTP API enabled
-
-## Quick Start
+## Install & configure
 
 ```bash
-npm install        # postinstall automatically patches the @snowluma/sdk ESM packaging bug
+npm install        # postinstall patches an @snowluma/sdk ESM packaging bug
 ```
 
-Copy `config.example.json` to `config.json`, then edit:
+Copy `config.example.json` to `config.json` and edit. Key fields:
 
-```bash
-cp config.example.json config.json
-```
-
-Key settings:
-
-| Field | Description |
+| Field | Meaning |
 | --- | --- |
-| `dsh.baseUrl` | DSH Web API URL, default `http://127.0.0.1:3080` |
-| `dsh.authToken` | DSH launch token (a process-launch credential). **Normally leave this empty**: with no token the bridge mints the session cookie offline from the persistent signing key in `~/.dsh/.credentials.yaml`, which depends on no per-process state (since DSH 0.1.7 the launch token lives only in memory — the one in the old logs belongs to a previous process and only yields a 401). A value here is honoured first if you set one |
-| `dsh.authHeader` / `dsh.authPrefix` | Legacy fields kept for compatibility; the current path uses Cookie auth and does not send this header |
-| `snowluma.wsUrl` | SnowLuma OneBot **WebSocket** URL (e.g. `ws://127.0.0.1:3001`) |
-| `snowluma.accessToken` | OneBot access token, leave empty if not configured |
-| `snowluma.httpUrl` | OneBot **HTTP API** URL (e.g. `http://127.0.0.1:3000`); do not point this at the WebSocket port or you will get HTTP 426 |
-| `ownerQQ` | Administrator QQ (highest privilege) |
-| `allow.private` / `allow.groups` | Whitelist of QQ/group IDs |
-| `consolePort` | Local console port, default `3100` |
+| `gateway.url` / `secret` / `adapterId` | gateway endpoint, HMAC secret (must match the gateway side), adapter id — all mandatory |
+| `snowluma.wsUrl` / `httpUrl` / `accessToken` | OneBot WebSocket / HTTP endpoints and token |
+| `snowluma.followDiscoveredEndpoint` | default `true`: self-heal endpoints and write them back to `config.json`; set `false` for a second instance or a non-default SnowLuma install |
+| `ownerQQ` | admin QQ id for management commands |
+| `allow.private` / `allow.groups` / `deny.*` | send-side allowlist/denylist; empty allowlist + `allowAllWhenEmpty: false` (default) rejects all sends |
+| `sendDelayMs` | delay between consecutive QQ sends |
+| `consolePort` / `consoleToken` | local console port / access token (auto-generated and printed on first start if empty) |
+| `socialV2.*` | simulation parameters: wake, send pacing, wait, stickers, voice, media caps, initial-prompt size |
 
-Start:
-
-```bash
-npm start
-```
-
-Or double-click `start.bat` on Windows (guard mode with auto-restart).
-
-## DSH Setup on Another Device
-
-The bridge and console can run without extra DSH setup, but the two DSH chat presets (`qq-chat` and `qq-chat-v2`) and the MCP servers must be installed into DSH once per machine:
+## Start
 
 ```bash
-node scripts/setup-dsh.mjs
+npm start          # or start.bat (auto-restart guard on Windows)
 ```
 
-This installs:
+Success looks like `SnowLuma 已连接` plus a connected gateway card in the console. Single-instance lock enforced; `restart.bat` kills and restarts the daemon.
 
-- the `qq-agent-presets` bundle, which generates the two `@deepseek-ai/dsh-agent-preset` rows (`qq-chat`, `qq-chat-v2`) plus the shared `qq-tool-restrict` safety guard
-- MCP entries in `~/.dsh/profiles/web/cordis.patch.yml`
-- `qq-mode-console` and `qq-agent-presets` in the profile `package.json` (`bundles` + `link:` dependencies)
-- Default DSH mode set to `reserved2` (second-generation simulation), with a local `state/mode.json` fallback
-
-Then restart DSH. See [docs/guides/DSH_SETUP.md](docs/guides/DSH_SETUP.md) for details.
-
-## Security Notes
-
-- `config.json` and `state/` are **never committed**; the repository only ships `config.example.json`. Both are ACL-hardened to the owner / SYSTEM / Administrators (`npm run harden-acl`).
-- MCP send tools enforce whitelist checks and reject CQ-code injection.
-- Local paths, credentials, tokens and other sensitive patterns are filtered by the audit layer.
-- Simulation sessions get **no local execution tools at all**: the preset's `qq-tool-restrict` row hides them from the tool schema at registration time and a runtime allowlist rejects anything outside the QQ MCP namespaces (`npm run scan:tool-names` re-checks that list against the installed DSH).
-- The console uses a generated token when none is configured.
-
-## Repository Layout
-
-```
-qq-bridge/
-  config.example.json   # sanitized config template (real config.json is not in repo)
-  docs/
-    README.md           # documentation index (one line per doc + "still current?" notes)
-    FOLDER_MAP.md       # folder layout and scripts/ naming conventions
-    guides/             # user/operator facing: PROJECT_GUIDE, DSH_SETUP, VOICE, TOKEN_USAGE_CONSOLE, CONSOLE-UI-TESTING
-    design/             # design & planning docs
-    research/           # investigation notes
-    audits/             # review / optimisation reports
-    legacy/             # archived docs that were superseded
-  dsh/agent-presets/    # qq-chat / qq-chat-v2 DSH agent preset templates
-  plugins/qq-agent-presets  # DSH bundle: generates the qq-chat / qq-chat-v2 preset patch rows + the shared tool guard
-  plugins/qq-mode-console  # DSH plugin: exposes the qq-mode settings namespace (host half only; no UI card yet)
-  src/                  # bridge core and MCP servers
-  public/
-    console.html        # local web console
-  roles/                # persona cards
-  assets/               # images (the intro video ships as a release asset, not in the repo)
-  scripts/              # tests and helper scripts
-  state/                # runtime data (not in repo)
-```
-
-The standalone **voice sender tool** (`voice-cli.mjs`, `voice-gui.mjs`, `public/voice.html`, `发语音.cmd`)
-lives in the sibling folder **`../voice-tool/`** — it only needs SnowLuma, and reuses this repo's
-`src/voice-core.js` / `src/snowluma-conn.js` as the single shared implementation.
-
-## Testing
-
-`npm run test:audit` runs isolated regression tests without production credentials, DSH, or QQ messages. The detailed audit is in [docs/audits/AUDIT_REPORT_2026-09-20.md](docs/audits/AUDIT_REPORT_2026-09-20.md) (Chinese); the 2026-09-18 one it superseded is archived in [docs/legacy/](docs/legacy/).
-
-After upgrading, legacy QQ session mappings without permission metadata are recreated once. Mode or preset changes also retire the old mapping and recreate the session on the next message; DSH history is retained.
+## Offline tests (no SnowLuma / QQ / gateway needed)
 
 ```bash
-npm run self-test       # DSH-side link test, no QQ/SnowLuma required
-npm run test-md
-npm run test-wait
-npm run test-vision
-npm run test-forward
-npm run test-slang
-npm run test-stickers
+npm run test:audit          # offline audit suite (behavior, security, media)
+npm run verify:decouple     # static decoupling contract checks
+npm run test:gateway        # gateway contract / state / wake synthesis / action layer
+npm run test:console-ui     # console browser regression (uses local Chrome/Edge)
 ```
+
+## Console token transport (since 2026-11)
+
+Priority: `x-console-token` header > session cookie > `?token=` (**only** for the initial
+`GET /`). Opening `http://127.0.0.1:3100/?token=<token>` in a browser gets a
+`HttpOnly; SameSite=Strict` `qqb_console` cookie and a 303 to a clean `/`, so the token never
+stays in browser history or Referer. Scripts should send `x-console-token`; `?token=` on API
+routes is rejected with 401.
+
+## Known limitations
+
+- Received voice messages are placeholders (no transcription)
+- AI voice sending is off by default; put audio in `audio/` and enable it in the console
+- Agent replies are markdown-converted to plain text (links become `text (url)`)
+- `@snowluma/sdk` has an npm ESM extension bug, fixed by the postinstall patch
 
 ## Compliance
 
-SnowLuma is an independent third-party project and is not affiliated with Tencent/QQ. This project is for learning and technical research only; please follow the relevant terms and the QQ User Agreement.
+SnowLuma is an independent third-party project, unaffiliated with Tencent/QQ, for learning and research only; read its EULA and the QQ User Agreement before use.

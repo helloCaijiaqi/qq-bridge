@@ -1,4 +1,4 @@
-# QQ ↔ DeepSeek Harness 桥接
+# QQ ↔ agent-gateway 桥接（QQ 适配器）
 
 **English**: [README.en.md](README.en.md) | **中文**: [README.md](README.md)
 
@@ -12,45 +12,26 @@
 >
 > 🎤 独立的「发语音」工具已拆到仓库上一级的 **`../voice-tool/`**（命令行 `voice-cli.mjs` / 图形界面 `voice-gui.mjs`），不再依赖 qq-bridge 运行。
 
-把 QQ 消息接入 DSH agent：QQ 好友/群发来的消息会变成 DSH 会话里的用户消息，agent 的回复（含提问、工具审批）会发回 QQ。
-
-> ⚠️ **当前版本 `v0.2.1-r1`，适配 DSH 0.2.1-rc.2**（0.2.0-rc.2 亦兼容；两个版本上都逐项实测：`npm run verify:adaptation`）。
-> 鉴权用 `~/.dsh` 里持久化的浏览器会话签名密钥**离线铸造 Cookie** —— DSH 0.1.7 起进程启动 token
-> 只存在于内存、不再落盘，旧版「从 guard 日志里读 token」的方式已失效。agent preset 是 DSH 0.1.7 起的
-> `@deepseek-ai/dsh-agent-preset` Cordis 行（`~/.dsh/.agent-presets/` 目录机制已废）。协议代次
-> （Cookie 鉴权 / 斜杠 RPC / `/api/remote.mux` 事件流）自 DSH `0.1.2-alpha.1` 起引入，与更早的点号
-> endpoint 协议不兼容 —— 本仓库只维护当前版本，**DSH `0.1.7` 之前的内核不再提供适配分支**。
->
-> v0.2.0 修的主要是**会话待处理队列读不出来**：桥接退役/重置 QQ 会话时要先清掉 DSH 侧没跑的队列，
-> 而那段解析认的是一个**从来不存在的字段**（`session/control` baseline 的 `value.queues[<id>]`）——
-> 于是**每一次**退役都抛 `invalid session/control baseline`，队列清不掉、旧任务继续在 DSH 里跑，
-> 而日志里只有一行警告。**注意：这不是 0.2.0 引入的**——该代码随 v0.1.7 发布，报错日志早于
-> 0.2.0-rc.2 的发布，0.2.0 只是把它翻了出来。现在读队列以一元 RPC `session/projections` 为主路径、
-> 以 `projections[<id>].values.inbox` 为回退形状，并补了两条回归网。
-> 同一轮还按 0.2.0 的真实工具清单重新对账了 QQ 安全守卫（新增 15 个必须隐藏的工具名，
-> 含全局层默认启用的 `read_mcp_resource`、`plugin_manager`、`subagent_codex` 等）。
->
-> 逐条改动说明见 [docs/guides/DSH_020_ADAPTATION.md](docs/guides/DSH_020_ADAPTATION.md)（0.2.0）
-> 与 [docs/guides/DSH_021_ADAPTATION.md](docs/guides/DSH_021_ADAPTATION.md)（0.2.1）。
->
-> **r4 主要改动**：QQ 表情包/动图链路（表情 CDN 优先、`emoji_id` 兜底、DNS 多地址故障切换）、
-> 联网搜索改用与 DSH 同源的 DeepSeek 搜索（Bing 仅兜底）、`qq_wait_for_messages` 改 5 分钟长轮询、
-> 控制台切模式被 5 秒轮询改回去、回合永久「繁忙」、机器人身份未注入等 issue 修复，外加一轮整体体检。
-> 逐条见 [docs/guides/DSH_020_ADAPTATION.md](docs/guides/DSH_020_ADAPTATION.md)。
->
-> **v0.2.1-r1 主要改动**：适配 DSH 0.2.1-rc.2。修掉一处 **P0**——persona 里的 `{{cwd}}`
-> 提示词变量在 0.2.1 被删除，导致**每个回合在系统提示词装配阶段直接 error、模型一次都不跑**
-> （QQ 侧表现为「发消息完全没反应」）；同时把 0.2.1 新进全局层的 `working_directory`
-> 与 terminal / session-query / plugin_market 一族补进安全守卫名单。
-> 逐条见 [docs/guides/DSH_021_ADAPTATION.md](docs/guides/DSH_021_ADAPTATION.md)。
->
-> 默认分支 `main` **就是**本版本，`git clone` 直接拿到，无需切换分支。
+把 QQ 消息接入 agent-gateway：QQ 好友/群发来的消息经网关 `POST /v1/inbound` 投给智能体，
+智能体只能通过网关回调 `POST /v1/actions` 的动作读写 QQ。桥接是**纯 QQ 适配器**——
+不直连任何智能体运行时，也不自带 MCP server；「二代仿真」的自主收发/等待/唤醒是唯一行为形态，无模式开关。
 
 ```
-QQ 消息 ──► SnowLuma（OneBot v11 WS）──► 本桥接进程 ──► DSH Web API (127.0.0.1:3080/api)
-                                                ▲                      │
-                                                └── agent 回复/提问/审批 ┘
+QQ 消息 ──► SnowLuma（OneBot v11 WS）──► 本桥接进程 ──► agent-gateway /v1/inbound ──► 智能体
+                                                ▲                                        │
+                                                └──── /v1/actions（模型工具回调）◄── 网关 ◄──┘
 ```
+
+> **网关形态（唯一形态，无回退）**：
+> - 入站消息与 proactive/wait 合成事件统一投 `POST /v1/inbound`（适配器 HMAC 签名）；
+>   模型的发送/读取动作由网关回调 `POST /v1/actions`；回合文本**不产生任何出站动作**——
+>   要说话必须调用 `mcp__agent-gateway__chat_qq_send_message` 等工具。
+> - `config.gateway` 的 `url` / `secret` / `adapterId` 三项**缺一不可，缺失启动即失败**
+>   （绝不出现「启动成功但静默丢消息」）；网关不可达时入站**如实失败**（不落回本地）。
+> - 白名单是**双闸**：路由由网关 `GATEWAY_CONVERSATIONS` 裁决，桥接侧 `config.allow/deny`
+>   对发送动作做第二道校验。
+> - `/v1/actions/manifest` 的每条动作带 `enabled`（桥接按「实现覆盖 + configFlag」现算）；
+>   新增能力 = 清单加条目 + `src/gateway/action-handlers.js` 加一行映射。
 
 ## 项目展示
 
@@ -60,48 +41,24 @@ QQ 消息 ──► SnowLuma（OneBot v11 WS）──► 本桥接进程 ──�
 
 ## 架构
 
-- **QQ 侧**：`@snowluma/sdk` 的 `SnowLumaWebSocketClient`（OneBot v11 WebSocket 客户端，自动重连）
-- **DSH 侧**：适配 DSH 0.1.2 起引入、**0.2.1-rc.2 上逐项复核**的协议——用本机持久化签名密钥铸造会话 Cookie 鉴权、`/api/<namespace>/<method>` 斜杠 RPC、`/api/remote.mux` + `session/follow` 事件流（`session/control` 的队列读 `value.projections[<id>].values.inbox`，另有一元 `session/projections` 主路径）；复用 `AbstractApiClient` 传输层但不再依赖旧版 zod value schema。会话模型由桥接按 `config.json` 的 `dsh.model` 逐会话 `session.selectModel` 固定（默认 `deepseek-flash` = DeepSeek-V41-Flash，多模态）
-- **agent 自主收发 QQ**：DSH 的 MCP 客户端（`~/.dsh/profiles/web/cordis.patch.yml` 配置）接入五个 MCP server——本仓库三个由 `node scripts/setup-dsh.mjs` 登记，平级部署的兄弟包两个**由各自仓库的 `npm run install:dsh` 登记**（本仓库不再代装）：
-  - `snowluma`（桥接自带 `src/mcp-snowluma-safe.js`）：QQ 动作**安全子集**（查状态/查群/查消息/发消息，发送强制白名单；发送工具支持可选 `replyToMessageId` 引用回复）
-  - `snowluma-host`（桥接自带 `src/mcp-host-server.js`）：**只有** `snowluma_status`（只读探活 `get_login_info`）。
-    ⚠️ **v0.1.5 起移除了 `start_snowluma` / `stop_snowluma`**（以及 `snowluma.allowProcessControl` 配置项）——
-    原因是 **SnowLuma EULA §5.4** 规定「将其并入第三方安装包或 Docker 镜像、**通过自动化脚本部署**」
-    须事先取得书面授权，而原生组件属专有组件。本程序**只探测、不部署**：SnowLuma 的安装、启动与扫码
-    始终由你自己完成（详见 [LICENSE](LICENSE) 与 [RULES.md](RULES.md)）。
-  - `web-search-safe`（桥接自带 `src/mcp-web-search-safe.js`）：只读 `web_search` / `web_fetch`（带 SSRF 防护），供 agent 查网络用语/资料。
-    **搜索优先复用 DSH 原本的联网搜索**（同一个 DeepSeek Anthropic 兼容端点 + `web_search` 服务端工具，凭据按 `config.webSearch.apiKey` → 环境变量 `DEEPSEEK_API_KEY` → DSH 的 `.credentials.yaml` 顺序解析），
-    因而结果质量与 DSH 内的搜索一致、且**不再默认把群聊关键词发给 Bing**（Bing RSS 只在 DeepSeek 不可用时兜底）。
-    抓取仍由桥接自己做 SSRF 校验并限制正文大小；**黑话学习默认开启**，会把群聊里提取的词条交给所选的搜索后端。
-    数据出机清单见 [LICENSE](LICENSE) 的「数据出机清单」，不需要就关掉黑话自动研究（`slang.autoResearch`）或把 `webSearch.provider` 设为 `bing`。
-  - `memory`（平级兄弟包 `../memory-mcp`）：会话记忆（活跃话题 / 待续念头 / 群友印象）与**黑话词库**的存放处；桥接经回环 HTTP 取「记忆块 / 黑话段」注入提示词，并把改动镜像回本地 `state/`。MCP 条目由该仓库的 `npm run install:dsh` 自己登记。
-  - `rolecard`（平级兄弟包 `../rolecard-mcp`）：角色卡人格段的解析与渲染；桥接取「人格段」注入提示词。未装/不可用时回落本地实现。MCP 条目同样由该仓库的 `npm run install:dsh` 自己登记。
-- **会话模型**：每个 QQ 会话（私聊/群）对应一个独立的 DSH 会话，统一归组到「QQ 聊天」工作区（不再散落未分组）；映射持久化在 `state/sessions.json`
-- **性格定制**：QQ 会话默认使用 `qq-chat` agent preset，`reserved2` 使用 `qq-chat-v2`。DSH 0.1.7 起 preset 不再是 `~/.dsh/.agent-presets/<名>/` 目录，而是 `plugins/qq-agent-presets/` bundle 生成并插入 profile 的一条 `@deepseek-ai/dsh-agent-preset` 行（重启 DSH 后生效）；人格与默认 DSH 一致（coding agent），仅附加 QQ 场景规则；**角色扮演**是可选机制——由控制台或管理端设置 `state/current-role.json` 注入（群友无法更改）
-- **本地控制台**：桥接自带 Web 控制台 `http://127.0.0.1:3100`——左侧按操作任务分为「运行总览 / 会话与审批 / 人格与角色 / 二代仿真 / 一代仿真 / 黑话词库 / 令牌与花费 / 访问与安全 / 调试与运维 / 工具参考」十个页面，右上角搜索框可跨页定位任意功能项；支持**浅色 / 深色双主题**（顶栏一键切换，未选择时跟随系统）；切换运行模式（chat / closed-agent / reserved / reserved2）、设置角色、静默开关、查看活动日志、修改管理员/控制台令牌，全部即时生效；访问需要令牌（`config.json` 的 `consoleToken`，未配置时自动生成并打印在启动日志；控制台内可手动修改或重新生成）
-  - **令牌与花费看板**：实时显示 AI 的 token 消耗与折算金额（元），可下钻到**每个群 / 每个好友 / 每一轮对话**（轮次、步数、缓存命中/未命中输入、输出、命中率、花费、峰谷时段），并有**按时间的消耗走势图**（24 小时 / 3 天 / 7 天 / 30 天，柱子按高峰/空闲着色，一眼看出什么时候烧得凶、哪几个小时是 2 倍价）。累计总量取自 DSH 的 `tokenUsage` 投影（精确，含桥接启动前的历史），逐轮明细由 `assistant/message` 的 `usage` 折叠而来；金额按 DeepSeek 官方价目表折算并区分**高峰 / 空闲时段**（高峰单价为空闲的 2 倍，已内置中国法定节假日）。详见 [docs/guides/TOKEN_USAGE_CONSOLE.md](docs/guides/TOKEN_USAGE_CONSOLE.md)
-  - **人格（角色扮演）管理**：列表点选即可载入查看/编辑提示词，支持新建、保存修改、改名（自动重命名文件）、另存为副本、删除；超过注入上限或含一代专用指令会实时提示
-  - **两层提示词可分别查看与修改**：「仿真提示词」（预设内置，管行为与协议，保存后同步到 DSH，需重启生效）与「人格提示词」（`roles/*.md`，管人设与语气，保存即生效）；仿真层保存前做安全不变量校验与自动备份，可一键还原
-  - **会话初始提示词**（二代仿真）：「二代仿真 → 初始提示词」里可以给某个群/私聊预写一段环境说明（圈子主题、群内氛围、常见话题、忌讳），AI **只在该会话第一次唤醒时收到一次**（之后已在会话上下文里，不再重复注入）。可在群还没说过话时提前写；AI 既读不到也改不了这份设置（仅控制台接口）。会话被重置（「会话映射」里的重置或「重置二代状态」）后，下一次首次唤醒会重新带上它。字数上限见 `socialV2.initialPromptMaxChars`
-  - **DSH 思考强度**：默认 `max`，可选 `high` / `low`，档位从 DSH 实际公布的能力读取，保存后下一条消息生效；控制台会明示该设置同时写入 DSH 全局默认（`~/.dsh/settings.yaml`）
-- **运行模式**：
-  - `chat`：白名单群 + 白名单私聊 → qq-chat 安全聊天
-  - `closed-agent`：仅私聊 owner（config.json 的 ownerQQ，可在控制台设置）→ 完整工具（默认用 DSH 自己声明的默认 preset，即 `standard`；可在控制台「closed-agent preset」下拉改为任意 DSH preset），可在 QQ 上操控 DSH
-  - `reserved`（一代仿真）：仿真群友，观望/活跃/试探/退场状态机，选择性参与、按空格分句发送、主动收尾
-  - `reserved2`（二代仿真，运行 `setup-dsh.mjs` 后 DSH 默认）：文本不自动转发，AI 通过 `qq_get_unread_messages` / `qq_send_message` 等工具自主看消息、发言、等待、设置唤醒/潜水；DSH 端使用 `qq-chat-v2` preset
-- **交互增强**：
-  - agent 通过 `ask_user_question` 提问时，问题会转发到 QQ，回复即自动应答
-  - agent 请求工具审批时，转发到 QQ，回复「通过」/「拒绝」即可决策
-  - 支持 DSH 斜杠命令（如 `/model`）与 `/reset`（重置会话上下文）
-  - 群聊引用/回复会解析成「被引用人 + 原文」注入 DSH（如 `[引用 Derp：El Psy Kongroo是啥]机关的走狗`），让 AI 判断这句话是对谁说的，不会把群友之间引用第三方的对话误当成指向自己；引用机器人自己时会被视为必回
-  - **图片/表情（含动图 GIF）**：表情包优先走 QQ 的 CDN 直链，`get_image` 失败时用 `emoji_id` 推出 CDN 地址兜底；媒体元数据保留 `emoji_id`/`summary`/`sub_type` 等字段。下载走同一套 SSRF 防护传输，并修掉了「DNS 先返回 IPv6、本机没有 IPv6 出口 → 每次白等 20 秒」的根因（改为 **IPv4 优先 + 逐地址故障切换**），动图表情不再时好时坏。单条消息上限默认 8MB / 64MP / 5 张（`socialV2.media`）
-  - MCP 发送工具支持可选 `replyToMessageId`，并新增专用 `qq_reply` 工具：AI 可以先用 `qq_get_group_history` 拿到真实消息 id，再引用/回复某条消息（是否允许 AI 主动使用由人格/策略决定；桥接会检测发送类工具调用并自动跳过该回合的重复自动转发）
-  - 一代仿真模式（`reserved`）下，AI 可以只输出 `[SILENT]` 表示“潜水/不接话”，桥接会静默不发送
-  - 一代仿真模式（`reserved`）按空格分句：AI 用空格表示拆成多条消息；中英文/数字之间的空格也会被当成分条信号，不想分条就不要加空格（`reserved2` 不适用，分条请用 `qq_send_message` 数组）
+- **QQ 侧**：`@snowluma/sdk` 的 `SnowLumaWebSocketClient`（OneBot v11 WebSocket 客户端，自动重连；token/端点自愈）
+- **网关侧**：`src/gateway/` 的 `gateway-client.js`（HMAC 签名、重试、健康探活）+ `actions-manifest.json`（动作清单及 schema）+ `action-handlers.js`（动作 → QQ 能力映射）。发送/读取动作与入站投递全部经网关，桥接自身不持有任何模型凭据
+- **二代仿真（唯一行为形态）**：AI 通过 `chat_qq_get_unread` / `chat_qq_get_recent` / `chat_qq_send_message`（数组分条）/ `chat_qq_wait` / `chat_qq_set_wake` 等工具自主看消息、发言、等待、设置唤醒与潜水（主名由网关按 `chat_<platform>_<action>` 生成，旧名 `qq_*` 与 `chat_*` 仍作兼容别名）；桥接负责水位、唤醒限频、发送节奏与白名单硬闸
+- **本地控制台**：桥接自带 Web 控制台 `http://127.0.0.1:3100`，按操作任务分为四页——
+  **运行总览**（网关连接 / SnowLuma 上游健康 / 二代 AI 会话状态 / 活动日志）、
+  **访问与安全**（白名单与管理员、安全设置、state 目录 ACL、控制台令牌）、
+  **调试与运维**（测试发送、二代仿真会话控制与工具开关、唤醒参数、初始提示词、会话状态、语音调试、工作区重置）、
+  **工具参考**（网关动作清单）；右上角搜索框可跨页定位；浅色 / 深色双主题（跟随系统）。
+  访问需要令牌（`config.json` 的 `consoleToken`；未配置时自动生成并写入 `state/console-token`——启动日志只提示位置，**不打印令牌**）
+- **媒体与表情**：表情包优先走 QQ 的 CDN 直链，`get_image` 失败时用 `emoji_id` 推出 CDN 地址兜底；
+  下载走统一 SSRF 防护传输（仅 http/https、禁止私有地址、逐跳校验、IPv4 优先逐地址故障切换）；
+  单条消息上限默认 8MB / 64MP / 5 张（`socialV2.media`）
+- **语音**：AI 发语音只能发**语音库**（`socialV2.voice.dir`，默认 `audio/`）里的文件，
+  有独立的时长/体积/频率上限；默认关闭（`socialV2.voice.enabled` 与 `tools.sendVoice`）。详见 [docs/guides/VOICE.md](docs/guides/VOICE.md)
 
 ## 前置条件
 
-1. 运行中的 DeepSeek Harness Web（默认 `http://127.0.0.1:3080`）
+1. 运行中的 agent-gateway（默认 `http://127.0.0.1:7190`；`adapterId` / `secret` 与桥接配置一致，网关侧需注册本适配器）
 2. 运行中的 SnowLuma，且配置好 OneBot WebSocket 与 HTTP API（默认 `ws://127.0.0.1:3001` / `http://127.0.0.1:3000`，`accessToken` 视配置填写）
 3. Node.js ≥ 22.13
 
@@ -119,52 +76,30 @@ npm install        # 安装依赖（postinstall 会自动修补 @snowluma/sdk �
 
 | 字段 | 说明 |
 | --- | --- |
-| `dsh.baseUrl` | DSH Web 地址，默认 `http://127.0.0.1:3080` |
-| `dsh.provider` / `dsh.model` / `dsh.reasoningEffort` | DSH 会话使用的模型/推理强度；若你的 DSH 没有示例中的模型，改成 DSH 设置页里可用的模型即可（选择失败只打日志，不阻塞启动） |
-| `dsh.authToken` | DSH launch token（进程启动凭据）。**通常应留空**：留空时桥接用 `~/.dsh/.credentials.yaml` 里持久化的签名密钥**离线铸造**会话 Cookie，不依赖任何进程期状态（DSH 0.1.7 起启动 token 只存在于内存、日志里那条是上一个进程的陈旧值，换 Cookie 只会 401）。只有显式填了才会优先走 token 交换 |
-| `dsh.authHeader` / `dsh.authPrefix` | 保留字段，当前新版 DSH 链路使用 Cookie 交换，不再直接发送该鉴权头 |
+| `gateway.url` | agent-gateway 地址，默认 `http://127.0.0.1:7190`。**必填**，缺失启动即失败 |
+| `gateway.secret` | 适配器 HMAC 密钥，必须与网关侧一致。**必填** |
+| `gateway.adapterId` | 本适配器在网关侧的注册 id，默认 `qq-main`。**必填** |
 | `snowluma.wsUrl` | SnowLuma OneBot **WebSocket** 地址（如 `ws://127.0.0.1:3001`） |
 | `snowluma.httpUrl` | OneBot **HTTP API** 地址（如 `http://127.0.0.1:3000`）；不要填 WebSocket 端口，否则会报 HTTP 426 |
 | `snowluma.accessToken` | OneBot accessToken，未配置留空 |
 | `snowluma.followDiscoveredEndpoint` | 默认 `true`。换 QQ 账号后 token 与端口都会变，桥接会自愈：重新发现并**跟随** SnowLuma 的端点（同时写回 `config.json`）。**想跑第二个实例 / 指向另一份 SnowLuma 安装（多账号、测试）时设为 `false`** —— 那时只自愈 token，绝不动 URL，也不写回 URL。详见「已知行为」 |
 | `snowluma.silenceWarnMs` | 上游静默告警阈值（毫秒），默认 `600000`（10 分钟）。已连接但这么久没收到任何事件包（含心跳）时打警告；这只是**提示**，不确定性的判断交给 `good` |
 | `snowluma.launcherPath` / `homeDir` | SnowLuma 安装目录（用于 token/端点自发现）。⚠️ 桥接**不会**启动或停止 SnowLuma（见 `LICENSE`） |
-| `agentPreset` | QQ 会话使用的 DSH agent preset，默认 `qq-chat`（改性格见下文） |
-| `socialV2.agentPreset` | `reserved2` 模式使用的 DSH agent preset，默认 `qq-chat-v2` |
-| `socialV2.initialPromptMaxChars` | 会话「初始提示词」（控制台为某个群/私聊预写的环境说明）的字数上限，默认 2000，允许 100~8000。越界值会在启动时收敛并保持原文件不动 |
-| `socialV2.media` | 图片/表情的上限：`maxBytes`（单条消息总字节，默认 8MB）、`maxPixels`（单张像素，默认 64MP）、`maxCount`（单条最多处理几张，默认 5）。越界值启动时收敛 |
-| `webSearch.provider` | 联网搜索后端：`auto`（默认，优先 DeepSeek、失败回退 Bing）/ `deepseek`（仅 DeepSeek，无凭据时报错）/ `bing` |
-| `webSearch.apiKeyEnv` / `apiKey` | 搜索凭据的环境变量名（默认 `DEEPSEEK_API_KEY`）/ 直接写死 key（不推荐）。都不设置时读 DSH 的 `$DSH_HOME/.credentials.yaml` 里同名 ref |
-| `webSearch.baseURL` / `model` / `maxUses` / `maxResults` | 搜索端点（默认 `https://api.deepseek.com/anthropic/v1`，必须 https 且解析到公网）、模型（默认 `deepseek-v4-flash`）、单次搜索最多用几次工具、返回条数上限 |
-| `workspaceTitle` | QQ 会话在 DSH 界面中的归组名称，默认「QQ 聊天」 |
-| `allow.private` / `allow.groups` | 白名单（QQ 号/群号数组）；留空且 `allowAllWhenEmpty: true` 时放行全部 |
+| `ownerQQ` | 管理员 QQ 号；管理命令（`/status` / `/reset` 等）只认这个号 |
+| `allow.private` / `allow.groups` | 白名单（QQ 号/群号数组）；留空且 `allowAllWhenEmpty: true` 时放行全部。发送动作的第二道闸 |
 | `deny.*` | 黑名单，优先于白名单 |
-| `ackMessage` | 消息投递后的立即回复，空字符串关闭 |
 | `sendDelayMs` | QQ 连续发送间隔，防止触发频率限制 |
 | `consolePort` | 本地控制台端口，默认 `3100` |
 | `consoleToken` | 控制台访问令牌；留空时启动自动生成并保存到 `state/console-token` |
+| `socialV2.*` | 二代仿真参数（唤醒 / 发送节奏 / 等待 / 表情 / 语音 / 媒体 / 初始提示词），控制台「调试与运维」页可视化编辑 |
+| `socialV2.initialPromptMaxChars` | 会话「初始提示词」（控制台为某个群/私聊预写的环境说明）的字数上限，默认 2000，允许 100~8000。越界值会在启动时收敛并保持原文件不动 |
+| `socialV2.media` | 图片/表情的上限：`maxBytes`（单条消息总字节，默认 8MB）、`maxPixels`（单张像素，默认 64MP）、`maxCount`（单条最多处理几张，默认 5）。越界值启动时收敛 |
 
-> ⚠️ `allowAllWhenEmpty: true` 表示「白名单没填就全部放行」——把 agent 接入 QQ 等于把账号控制权交给了模型，建议先填白名单。
-
-### DSH 端安装（必做：装 preset + 挂 MCP）
-
-桥接和控制台能跑起来还不够，DSH 端还需要安装两个聊天 preset（`qq-chat` / `qq-chat-v2`）并挂载 MCP。**单机新装同样必须执行这一步**（不是只有「另一台设备」才需要），装完还要**重启 DSH**：
-
-```bash
-node scripts/setup-dsh.mjs
-```
-
-> 全新环境下脚本会把 DSH 默认模式设为 **`reserved2`（二代仿真）**，并创建本地 `state/mode.json` 兜底；这样 AI 使用 `qq_send_message` 等工具收发消息时，DSH 会自动使用 `qq-chat-v2` 模式。如果本机已存在旧的 `state/mode.json` 或 DSH 设置值，脚本会保留不覆盖。之后可在**桥接控制台**（默认 `http://127.0.0.1:3100`）顶部按钮切换模式，控制台会同时写入 DSH 设置与本地兜底文件。
-
-详细步骤见 **[docs/guides/DSH_SETUP.md](docs/guides/DSH_SETUP.md)**。
+> ⚠️ `allowAllWhenEmpty: true` 表示「白名单没填就全部放行」——把 agent 接入 QQ 等于把账号控制权交给了模型，建议先填白名单。注意网关侧的 `GATEWAY_CONVERSATIONS` 才是路由裁决者：桥接白名单只拦「发出去」。
 
 ## 完整启动流程（从零开始）
 
-共 6 步。DSH 已安装并运行，缺的是 SnowLuma 本体 + 桥接侧的 DSH 端安装（**第 2、3 步最容易漏，漏了 QQ 上会毫无反应**）：
-
-1. **DSH**（已运行，无需操作）
-   确认 `http://127.0.0.1:3080` 能打开即可。
-
+1. **启动 agent-gateway**，在网关侧注册适配器（记下 `adapterId` 与 `secret`），并配置 `GATEWAY_CONVERSATIONS` 路由白名单。
 2. **装桥接并复制配置**
    ```bash
    git clone https://github.com/helloCaijiaqi/qq-bridge.git
@@ -172,20 +107,11 @@ node scripts/setup-dsh.mjs
    npm install
    ```
    Windows CMD 用 `copy config.example.json config.json`，其他平台用 `cp config.example.json config.json`。
-   **示例模板里 `allow.private` / `allow.groups` 是空数组**——空白名单 + `allowAllWhenEmpty: false` 时桥接不响应任何消息（这是刻意的 fail-closed 默认值）。白名单在第 5 步填。
-
-3. **装 DSH 端（preset + MCP），然后重启 DSH**
-   ```bash
-   node scripts/setup-dsh.mjs
-   ```
-   装完**必须重启 DSH**——preset 与 MCP 只在 DSH 启动时加载。
-   跳过这步桥接不会崩，但群聊会话拿不到 `qq-chat` preset，桥接会**拒绝建会话**（有意的安全设计：绝不回退到带 bash/文件工具的默认 preset），表现同样是 QQ 上没反应。
-
-4. **下载并解压 SnowLuma**
+   填好 `gateway` 三项；**示例模板里 `allow.private` / `allow.groups` 是空数组**——空白名单 + `allowAllWhenEmpty: false` 时桥接拒绝一切发送（这是刻意的 fail-closed 默认值）。
+3. **下载并解压 SnowLuma**
    - 下载：<https://github.com/SnowLuma/SnowLuma/releases/latest> 选 `SnowLuma-v<版本>-win-x64.zip`（完整版，自带 Node 运行时；Lite 版需本机 Node 22.13+）
    - 解压到任意目录（例如 `C:\SnowLuma`），双击 `launcher.bat`
-
-5. **首次引导（WebUI）+ 填写桥接配置**
+4. **首次引导（WebUI）+ 填写桥接配置**
    - 打开启动日志里的 WebUI 地址（README 写的是 `http://localhost:5099`，以你启动日志里实际打印的为准）
    - 用**启动日志中的初始密码**登录，按引导：同意条款 → 设置密码 → 接入 QQ 进程（扫码登录）
    - 在 WebUI 里配置 OneBot 连接：开启 **WebSocket 服务端** 和 **HTTP API**，分别记下**端口**（默认 WS `3001`、HTTP `3000`）和 **accessToken**（若配置了）
@@ -199,13 +125,12 @@ node scripts/setup-dsh.mjs
      }
      ```
 
-   `wsUrl` 是 OneBot **WebSocket** 端口，`httpUrl` 是 OneBot **HTTP API** 端口（不要填成同一个 WS 端口，否则 MCP 工具会报 HTTP 426）。
-
-6. **启动桥接**
+   `wsUrl` 是 OneBot **WebSocket** 端口，`httpUrl` 是 OneBot **HTTP API** 端口（不要填成同一个 WS 端口，否则动作会报 HTTP 426）。
+5. **启动桥接**
    ```bash
    npm start          # 前台运行（崩溃不自动重启）
    ```
-   看到 `SnowLuma 已连接` 即成功；然后 QQ 上给机器人账号发条消息测试。
+   看到 `SnowLuma 已连接` 且控制台总览显示网关已连接即成功；然后 QQ 上给机器人账号发条消息测试。
    Windows 想要「崩溃自动重启」请改用 `start.bat`（见下节）。
 
 ## 运行与运维
@@ -218,44 +143,28 @@ npm start          # 或双击 start.bat（守护模式：崩溃自动重启，�
 - **桥接只能运行一个实例**（有单实例锁，重复启动会被拒绝并提示"已有实例在运行"）
 - **用 start.bat 启动**（守护模式），窗口别关——桥接崩溃会在 5 秒后自动拉起
 - 桥接异常/消息无反应时：双击 `restart.bat`（自动杀旧实例 → 清理锁 → 重新启动守护）
-- **重启 DSH 通常不需要动桥接**：每 5 秒探活，DSH 不可用期间收到的 QQ 消息在桥接进程内排队（最多 50 条/会话，满后丢最旧项），恢复后尝试补投。桥接进程退出会丢失内存队列；断线期间已经结束的回复暂不保证补发。
-- 修改 `config.json` / `roles/` / `state/current-role.json` 后重启桥接生效；修改 `dsh/agent-presets/`（改完要跑 `node scripts/build-agent-preset-patches.mjs` 重新生成 bundle patch）或 MCP 配置后重启 DSH 生效
+- **重启网关通常不需要动桥接**：网关不可达期间入站如实失败，恢复后自动续上；网关侧会话/游标状态由网关自己的持久化负责
+- 修改 `config.json` 后重启桥接生效；控制台里的白名单 / 安全设置 / 二代仿真参数保存即热更新
 
 日志示例：
 
 ```
 12:00:01 [bridge] SnowLuma 已连接：ws://127.0.0.1:3001
-12:00:02 [bridge] 新会话 private:12345678 -> sess_xxxx
-12:00:02 [bridge] 已投递 private:12345678: 你好
-12:00:20 [bridge] agent 回复 (private:12345678) 42 字
+12:00:02 [bridge] 网关形态：adapter=qq-main → http://127.0.0.1:7190（桥接不连接智能体运行时）
+12:00:03 [bridge] 入站 private:12345678 → POST /v1/inbound（routed）
 ```
 
-## 自测（不需要 SnowLuma / QQ）
+## 自测（不需要 SnowLuma / QQ / 网关）
 
 离线回归（使用临时目录和模拟服务，不读取真实配置、不发 QQ 消息）：
 
 ```bash
-npm run test:audit
+npm run test:audit          # 离线审计套件（行为、安全、媒体、协议层）
+npm run verify:decouple     # 平台解耦契约静态校验（桥接零 DSH 直连、动作面 = QQ 能力）
+npm run test:gateway        # 网关契约 / 状态 / 唤醒合成 / 动作层离线测试
+npm run test:console-ui     # 控制台离线浏览器回归（需本机 Chrome/Edge，见 docs/guides/CONSOLE-UI-TESTING.md）
+npm run preview:console     # 不启动桥接离线预览控制台（全部数据为合成数据）
 ```
-
-reserved2 的 token 开销优化、消息水位协议、升级及回退说明（该专项分析为本地文档，未随仓库发布。）专项离线回归可运行 `npm run test:token`，已包含在上面的完整回归中。
-
-控制台「令牌与花费」看板的账本与价目表回归（峰谷分时、幂等折叠、基线合并、压缩与容错）：
-
-```bash
-npm run test:tokens        # 单元测试
-npm run test:console-ui    # 离线浏览器回归（含看板渲染与逐轮下钻）
-```
-
-本轮审查与修复明细为本地审计文档，未随仓库发布。升级后会为没有权限元数据的历史映射重建一次 QQ 会话；模式或 preset 变化也会自动重建，避免保留旧权限。旧历史仍在 DSH 中。
-
-验证 DSH 侧链路是否打通（会创建一个独立测试会话，不影响现有会话）：
-
-```bash
-npm run self-test
-```
-
-预期输出：连接成功 → 测试会话创建 → prompt 被接受 → 打印 agent 回复。
 
 ## 目录结构
 
@@ -263,30 +172,22 @@ npm run self-test
 qq-bridge/
   config.example.json   # 配置模板（脱敏占位符；真实 config.json 不入库）
   README.md / README.en.md / RULES.md   # 根目录只留这三个文档，其余全在 docs/
-  docs/
-    README.md           # 文档索引（每篇一句话 + 是否仍然有效）
-    FOLDER_MAP.md       # 目录结构与 scripts/ 命名约定
-    guides/             # 面向使用者/运维：PROJECT_GUIDE / DSH_SETUP / VOICE / TOKEN_USAGE_CONSOLE / CONSOLE-UI-TESTING
-    design/             # 设计与规划：GEN2_SIMULATION_PLAN / SOCIAL_MODE_PLAN / DSH_QQ_TOOLS_PLAN / 真人语感策略
-    research/           # 调研：SnowLuma功能调研 / QQ消息免打扰 / 表情包能力 / 本地模型选型
-    audits/             # 审查与优化报告（体检、控制台、token）
-    legacy/             # 历史归档（已被取代或问题已全部修复的旧报告）
-  audio/                # 语音库：把准备好的音频放这里，可作 QQ 语音发出（用法见 docs/README.md 文档索引）
-  dsh/agent-presets/    # qq-chat / qq-chat-v2 的 DSH agent preset 模板
-  plugins/qq-mode-console  # DSH 插件：注册 qq-mode 设置命名空间（仅 host 半，UI 卡片未实现）
+  docs/                 # 文档（索引见 docs/README.md，目录约定见 docs/FOLDER_MAP.md）
+  public/console.html   # 桥接自带控制台（127.0.0.1:3100，单文件：四页 + 内联 JS/CSS）
   src/
-    bridge.js           # 主程序
-    dsh-client.js       # Node 版 DSH API 客户端（WS 下行）
-    md-to-plain.js      # Markdown → QQ 纯文本
-    self-test.js        # DSH 侧自测
-  scripts/              # 测试/运维脚本（含 postinstall 的 patch-snowluma-sdk.mjs）
-    patch-snowluma-sdk.mjs  # 修补 SDK 的 ESM 打包 bug（postinstall 自动执行）
+    bridge.js           # 主程序（入站投递、二代仿真、控制台后端）
+    gateway/            # 网关客户端、动作清单与映射（actions-manifest.json / .schema.json 必须同目录）
+    chat/               # 消息/提示词加工（md-to-plain、qq-model-view、sticker-lib、v2-wait 等）
+    media/              # 语音与图片（voice-core、send-voice-lib、media-normalize、safe-fetch）
+    ops/                # state 目录 ACL
+    core/               # 会话路由基础设施
+  scripts/              # 测试/运维脚本（约定见 docs/FOLDER_MAP.md；含 postinstall 的 patch-snowluma-sdk.mjs）
+  assets/               # 仓库用图片等资源
   state/                # 运行时数据（不入库）
 ```
 
-> 🎤 **独立的「发语音」工具不在这里**：它是仓库上一级的 [`../voice-tool/`](../voice-tool/)（`voice-cli.mjs` /
-> `voice-gui.mjs` / `public/voice.html` / `发语音.cmd`）。图形界面双击上一级的「发语音-图形界面.cmd」。
-> 它只依赖 SnowLuma，共享内核仍由本仓库 `src/voice-core.js` / `src/snowluma-conn.js` 提供（单一实现）。
+> 🎤 **独立的「发语音」工具不在这里**：它是仓库上一级的 [`../voice-tool/`](../voice-tool/)。共享内核不复制：
+> 工具经 `../qq-bridge/src/media/voice-core.js` 与 `../qq-bridge/src/integrations/snowluma-conn.js` 引同一份实现。
 >
 > ```bash
 > cd ../voice-tool
@@ -329,8 +230,8 @@ WARN [Hook] process enumeration timed out after 4000ms (worker abandoned)
 
 | 组件 | 要求 | 说明 |
 | --- | --- | --- |
-| SnowLuma **运行时**（QQ 网关本体） | **1.14.20 已实测**（1.14.9 亦兼容） | **实测记录（2026-10-03，SnowLuma 1.14.20 + QQ 在线）**：包 SHA256 与官方发布摘要一致；心跳 `status.good=true`／`interval=30000`；桥接走完「首次 1006 → 自愈 WS token → 已连接」；收到群消息（`lastPacketKind: message/group`）；完整往返成功（唤醒 → DSH 建会话挂 `qq-chat-v2` → 工具发送 1/1 条 → 实际发出两条回复）。 ⚠️ **升级运行时不会更换注入用的原生组件**：实测 `native/snowluma-win32-x64.{dll,node}` 与 `websocket-win32-x64.node` 在 **1.14.9 与 1.14.20 之间逐字节完全相同**（三方对比：官方 1.14.9 包 == 本机安装 == 官方 1.14.20 包），变的只有 `index.mjs`（+414 KB）等 JS 层。所以**升级能带来 OneBot 事件流水线、收发与新区块链路上的修复（`bot_status`、markdown 带 text、事件种类订阅更全），但不会修「原生 hook 挂不上 QQ」这类问题** —— 那种要走 SnowLuma 自己的排查。**升级 SnowLuma 是使用者自己的事**：本桥接只探测、不部署（见 [LICENSE](LICENSE) 与 [RULES.md](RULES.md)） |
-| `@snowluma/sdk` / `@snowluma/mcp`（本仓库依赖） | 已钉 `^1.14.20` | 客户端库；OneBot v11 是稳定契约，新库可连旧运行时（本项目实测：库 1.14.20 + 运行时 1.14.9 可正常收发） |
+| SnowLuma **运行时**（QQ 网关本体） | **1.14.20 已实测**（1.14.9 亦兼容） | **实测记录（2026-10-03，SnowLuma 1.14.20 + QQ 在线）**：包 SHA256 与官方发布摘要一致；心跳 `status.good=true`／`interval=30000`；桥接走完「首次 1006 → 自愈 WS token → 已连接」；收到群消息（`lastPacketKind: message/group`）；完整往返成功。 ⚠️ **升级运行时不会更换注入用的原生组件**：实测 `native/snowluma-win32-x64.{dll,node}` 与 `websocket-win32-x64.node` 在 **1.14.9 与 1.14.20 之间逐字节完全相同**，变的只有 `index.mjs`（+414 KB）等 JS 层。所以**升级能带来 OneBot 事件流水线、收发与新区块链路上的修复（`bot_status`、markdown 带 text、事件种类订阅更全），但不会修「原生 hook 挂不上 QQ」这类问题** —— 那种要走 SnowLuma 自己的排查。**升级 SnowLuma 是使用者自己的事**：本桥接只探测、不部署（见 [LICENSE](LICENSE) 与 [RULES.md](RULES.md)） |
+| `@snowluma/sdk`（本仓库依赖） | 已钉 `^1.14.20` | 客户端库；OneBot v11 是稳定契约，新库可连旧运行时（本项目实测：库 1.14.20 + 运行时 1.14.9 可正常收发） |
 | `bot_status`（账号上下线） | **1.14.20 有；1.14.9 没有** | 逐一核对的只有这两个版本：`bot_status` 在 1.14.9 的 `index.mjs` 里出现 **0** 次、1.14.20 里 **3** 次（带 `sub_type`/`user_id`）。**具体从哪个版本引入未逐版核对**。桥接对老运行时**优雅降级**：订阅不到就只靠心跳 `good` 与 `get_status` |
 
 ### 已知行为：HTTP token 与 WS token 是**两个不同的值**
@@ -357,10 +258,17 @@ SnowLuma 同一个账号的 **HTTP token（默认 3000 端口）与 WebSocket to
 
 关掉后**只自愈 token**（换账号仍能恢复），绝不动 URL、也不写回 URL。
 
+### 控制台令牌怎么传（2026-11 起）
+
+优先级：`x-console-token` 头 > 会话 Cookie > `?token=`（**仅** `GET /` 首次引导）。用浏览器打开
+`http://127.0.0.1:3100/?token=<令牌>` 时，服务端种一个 `HttpOnly; SameSite=Strict` 的
+`qqb_console` Cookie 并 303 到不带令牌的 `/`——令牌不会留在浏览器历史 / Referer 里。
+脚本调用请直接带 `x-console-token: <令牌>`；API 上带 `?token=` 会被 401 拒绝。
+
 ## 已知限制
 
-- agent 回复在回合结束时一次性发送（不做流式逐字转发）；回复超过 `socialV2.send.maxMessageChars`（默认 500 字，可用 `social.maxReplyChars` 调整）自动按句读/URL 边界分段
-- 图片及部分表情可以通过安全下载接入多模态模型；语音/视频以及无法取得图片字节的消息仍使用占位文本
+- AI 回复按工具调用逐条发送（`chat_qq_send_message` 数组分条），发送节奏由 `socialV2.send` 约束（条间间隔、每分钟/每小时上限、单条字数上限默认 500 字）
+- 图片及部分表情可以通过安全下载接入多模态链路；语音/视频以及无法取得图片字节的消息仍使用占位文本
 - **发**语音是支持的（独立工具的图形界面 / 命令行 / AI 工具，见 `docs/README.md` 的文档索引）；但**收**到的语音目前只显示占位文本，不做语音转写入上下文
 - **AI 发语音默认关闭**（`socialV2.voice.enabled` 与 `tools.sendVoice` 默认 `false`）：先把音频放进 `audio/`，再到控制台打开开关；你自己发语音不受这个开关影响
 - agent 的 Markdown 回复会转成纯文本（链接保留 `文字 (url)` 形式）

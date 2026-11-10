@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   LOUDNESS_TARGETS, VOLUME_MAX, VOLUME_MIN,
   cleanupTemp, processAudioVolume, resolveAudioProcessing
-} from '../src/voice-core.js';
+} from '../src/media/voice-core.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let pass = 0;

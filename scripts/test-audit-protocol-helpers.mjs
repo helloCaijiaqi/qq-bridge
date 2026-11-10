@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { findSticker, mergeStickerLibrary } from '../src/sticker-lib.js';
-import { splitForQQ } from '../src/md-to-plain.js';
-import { formatForwardResponse } from '../src/forward.js';
+import { findSticker, mergeStickerLibrary } from '../src/chat/sticker-lib.js';
+import { splitForQQ } from '../src/chat/md-to-plain.js';
+import { formatForwardResponse } from '../src/chat/forward.js';
 
 let failed = 0;
 function test(name, fn) {

@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "adapter actions manifest",
+  "description": "适配器能力清单（线缆动作唯一事实源）。由 agent-gateway/scripts/test-actions-manifest.mjs 与桥接启动期共同校验。本 schema 刻意只用一个受限的 JSON Schema 子集（validateAgainstSchema 支持：type/const/enum/required/properties/additionalProperties/items/minimum/maximum/minLength/maxLength/minItems/maxItems），不引入 ajv 依赖。",
+  "type": "object",
+  "required": ["v", "platform", "actions"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1 },
+    "platform": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "adapter": { "type": "string", "maxLength": 64 },
+    "notes": { "type": "array", "items": { "type": "string", "maxLength": 500 }, "maxItems": 20 },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "required": ["type", "summary", "kind"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "description": "线缆动作名（/v1/actions 的 envelope.type），snake_case；要求单清单内唯一，跨适配器可重复。",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "kind": {
+            "description": "预算分档：read 只读 / write 有副作用 / sensitive 需网关显式允许（如唤醒配置）。",
+            "enum": ["read", "write", "sensitive"]
+          },
+          "wired": {
+            "description": "是否已在适配器内接线（有可用 handler）。缺省 false：未显式声明 = 仅契约声明，调用回 E_UNSUPPORTED（宁可缺动作不可静默串线）。",
+            "type": "boolean",
+            "default": false
+          },
+          "configFlag": {
+            "description": "关联 socialV2.tools.<flag> 开关；宿主按开关决定是否注入 handler（关 = 未接线）。",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "tool": {
+            "description": "可选：chat 工具名覆盖；缺省由网关按 platform 生成 chat_<platform>_<action>。",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "legacyTool": {
+            "description": "溯源字段：该动作对应的旧 MCP 工具名（qq_* / wx_*），仅文档用途。",
+            "type": "string",
+            "maxLength": 128
+          },
+          "payloadSchema": {
+            "description": "线缆 payload 的 JSON Schema（受限子集）。/v1/actions 分发按它做 E_SCHEMA 校验。",
+            "type": "object",
+            "maxProperties": 64
+          }
+        }
+      }
+    }
+  }
+}

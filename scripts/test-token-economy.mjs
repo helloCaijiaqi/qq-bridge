@@ -20,7 +20,6 @@ async function test(name, run, { observe = false } = {}) {
     proactive: { enabled: false },
     sticker: { enabled: false },
   } } });
-  h.setMode('reserved2');
   const st = h.getSocialV2State(KEY);
   const server = h.startConsoleServer();
   if (!server.listening) await new Promise((resolve) => server.once('listening', resolve));
@@ -179,7 +178,7 @@ await test('wait exposes new messages and grants only their actually observed cu
   assert.deepEqual(seqs(st.unread), []);
 }, { observe: true });
 
-await test('another conversation token, pause, mode and allowlist guards still reject combined close', async ({ h, st, request, append }) => {
+await test('another conversation token, pause and allowlist guards still reject combined close', async ({ h, st, request, append }) => {
   append('protected conversation');
   await request('unread');
   const otherToken = h.getSocialV2State('private:123').agentToken;
@@ -188,12 +187,14 @@ await test('another conversation token, pause, mode and allowlist guards still r
   h.socialV2.paused = true;
   assert.equal((await request('wake-config', { body })).status, 403);
   h.socialV2.paused = false;
-  h.setMode('chat');
-  assert.equal((await request('wake-config', { body })).status, 403);
-  h.setMode('reserved2');
+  // 模式概念已删：自有会话令牌 + 白名单内 = 准入，恢复后可继续按游标已读。
+  assert.equal((await request('wake-config', { body })).status, 200);
+  assert.deepEqual(seqs(st.unread), [], '200 的这轮已按 throughSeq 已读');
+  // 白名单移除后，即便令牌正确也必须拒绝。
+  append('another message');
   h.cfg.allow.groups = [];
-  assert.equal((await request('wake-config', { body })).status, 403);
-  assert.deepEqual(seqs(st.unread), [1]);
+  assert.equal((await request('wake-config', { body: { config: ACTIVE, throughSeq: 2 } })).status, 403);
+  assert.deepEqual(seqs(st.unread), [2]);
 });
 
 await test('legacy mark-read still clears all unread and legacy wake-config preserves unread', async ({ st, request, append }) => {
@@ -251,45 +252,6 @@ await test('combined close respects the separate mark-read and wake-config tool 
   assert.deepEqual(seqs(st.unread), [1]);
 });
 
-await test('an in-flight wait cannot authorize new messages after its session token is retired', async ({ h, st, request, append }) => {
-  await h.ensureSession(KEY);
-  append('before wait');
-  const oldToken = st.agentToken;
-  const waiting = request('wait', { body: { timeoutMs: 1000, quietMs: 0 }, token: oldToken });
-  const timer = setTimeout(() => { h.retireSession(KEY); append('arrived after token retirement'); }, 60);
-  let result;
-  try { result = await waiting; } finally { clearTimeout(timer); }
-  assert.equal(result.status, 403);
-  assert.notEqual(st.agentToken, oldToken);
-  assert.equal(st.preSleepWaitObservedAt, 0);
-  assert.equal((await request('mark-read', { body: { throughSeq: 2 }, token: st.agentToken })).status, 400);
-}, { observe: true });
-
-await test('an in-flight wait cannot write observation into a replaced conversation state', async ({ h, st, request, append }) => {
-  append('old state');
-  const waiting = request('wait', { body: { timeoutMs: 100, quietMs: 0 } });
-  const timer = setTimeout(() => {
-    h.socialV2.conversations.delete(KEY);
-    append('new conversation state');
-  }, 60);
-  let result;
-  try { result = await waiting; } finally { clearTimeout(timer); }
-  assert.equal(result.status, 403);
-  assert.equal(st.preSleepWaitSatisfiedAt, 0);
-  const replacement = h.getSocialV2State(KEY);
-  assert.equal(replacement.preSleepWaitSatisfiedAt, 0);
-  assert.equal((await request('mark-read', { body: { throughSeq: 1 }, token: replacement.agentToken })).status, 400);
-}, { observe: true });
-
-await test('an in-flight wait rechecks mode permission before exposing a new arrival', async ({ h, request, append }) => {
-  append('before mode change');
-  const waiting = request('wait', { body: { timeoutMs: 1000, quietMs: 0 } });
-  const timer = setTimeout(() => { h.setMode('chat'); append('after mode change'); }, 60);
-  let result;
-  try { result = await waiting; } finally { clearTimeout(timer); }
-  assert.equal(result.status, 403);
-  assert.equal(result.data.newMessages, undefined);
-});
 
 await test('building a budgeted snapshot preserves whole oldest messages without granting a receipt', async ({ h, st, request, append }) => {
   h.cfg.socialV2.context.wakeMessageLimit = 2;
@@ -412,91 +374,11 @@ await test('busy and rate-limited wake attempts preserve the current observation
   assert.equal(h.calls.prompts.length, 0);
 });
 
-await test('a rejected prompt does not authorize the undelivered snapshot', async ({ h, st, request, append }) => {
-  append('rejected snapshot');
-  h.api.sessions.prompt = async (params) => {
-    h.calls.prompts.push(params);
-    return { result: { ok: false, error: { code: 'FIXTURE_REJECT', message: 'fixture rejection' } } };
-  };
-  await h.sendWakePromptV2(KEY, 'question');
-  assert.equal(h.calls.prompts.length, 1);
-  assert.equal((await request('mark-read', { body: { throughSeq: 1 } })).status, 400);
-  assert.deepEqual(seqs(st.unread), [1]);
-});
 
-await test('a new arrival during prompt acceptance is not implicitly part of the delivered snapshot', async ({ h, st, request, append }) => {
-  append('snapshot message');
-  h.api.sessions.prompt = async (params) => {
-    h.calls.prompts.push(params);
-    append('arrived after snapshot construction');
-    return { result: { ok: true, value: {} } };
-  };
-  await h.sendWakePromptV2(KEY, 'question');
-  assert.equal((await request('mark-read', { body: { throughSeq: 2 } })).status, 400);
-  assert.equal((await request('wake-config', { body: { throughSeq: 1, config: ACTIVE } })).status, 200);
-  assert.deepEqual(seqs(st.unread), [2]);
-});
 
-await test('a retired prompt session cannot grant a receipt when its old acceptance returns', async ({ h, st, request, append }) => {
-  append('retired snapshot');
-  h.api.sessions.prompt = async (params) => {
-    h.calls.prompts.push(params);
-    h.retireSession(KEY);
-    return { result: { ok: true, value: {} } };
-  };
-  await h.sendWakePromptV2(KEY, 'question');
-  assert.equal((await request('mark-read', { body: { throughSeq: 1 }, token: st.agentToken })).status, 400);
-  assert.deepEqual(seqs(st.unread), [1]);
-});
 
-await test('offline wake replay builds a fresh snapshot with the current session token', async ({ h, st, request, append }) => {
-  await h.ensureSession(KEY);
-  const originalToken = st.agentToken;
-  append('queued initial message');
-  h.setReady(false);
-  await h.sendWakePromptV2(KEY, 'question');
-  assert.equal(h.calls.prompts.length, 0);
-  assert.equal((await request('mark-read', { body: { throughSeq: 1 } })).status, 400);
-  h.retireSession(KEY);
-  append('queued later message');
-  h.setReady(true);
-  await h.flushQueue();
-  assert.equal(h.calls.prompts.length, 1);
-  const content = h.calls.prompts[0].content.map((part) => part.text || '').join('\n');
-  assert.ok(content.includes('queued initial message'));
-  assert.ok(content.includes('queued later message'));
-  assert.ok(content.includes(st.agentToken));
-  assert.ok(!content.includes(originalToken));
-  assert.equal((await request('mark-read', { body: { throughSeq: 2 }, token: st.agentToken })).status, 200);
-});
 
-await test('offline reserved2 wake replay cannot leak into an ordinary chat session', async ({ h, append }) => {
-  append('reserved2 queue message');
-  h.setReady(false);
-  await h.sendWakePromptV2(KEY, 'question');
-  h.setMode('chat');
-  h.setReady(true);
-  await h.flushQueue();
-  assert.equal(h.calls.prompts.length, 0);
-});
 
-await test('real wake delivery inlines compact messages with exact quote and media handles', async ({ h, st, request, append }) => {
-  append('fixture-inline-content', { id: '900719925474099312345',
-    media: [{ kind: 'image', file: 'fixture-local-image', url: 'https://images.invalid/fixture-secret' }],
-    forwards: ['fixture-forward-123'],
-  });
-  await h.sendWakePromptV2(KEY, 'question');
-  assert.equal(h.calls.prompts.length, 1);
-  const text = h.calls.prompts[0].content.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
-  assert.ok(text.includes('fixture-inline-content'));
-  assert.ok(text.includes('900719925474099312345'), 'quote ID must remain an exact string');
-  assert.ok(text.includes('fixture-forward-123'), 'forward handle must remain fetchable');
-  assert.ok(text.includes('readThroughSeq'));
-  assert.ok(!text.includes('fixture-secret'), 'media URL is unnecessary when the local seq can resolve it');
-  const close = await request('wake-config', { body: { config: ACTIVE, throughSeq: 1 } });
-  assert.equal(close.status, 200, 'delivered inline content should authorize its cursor');
-  assert.deepEqual(seqs(st.unread), []);
-});
 
 await test('oldest-first unread paging can drain a backlog beyond both recent and response limits', async ({ h, st, request, append }) => {
   h.cfg.socialV2.context.unreadLimit = 150;
@@ -520,22 +402,6 @@ await test('oldest-first unread paging can drain a backlog beyond both recent an
   }
 });
 
-await test('offline queued wakes respect pause and disable at dispatch without exposing messages', async ({ h, st, append }) => {
-  append('queued while active');
-  for (const policy of ['paused', 'disabled']) {
-    h.setReady(false);
-    await h.sendWakePromptV2(KEY, 'question');
-    if (policy === 'paused') h.socialV2.paused = true;
-    else h.cfg.socialV2.enabled = false;
-    h.setReady(true);
-    await h.flushQueue();
-    assert.equal(h.calls.prompts.length, 0);
-    assert.equal(st.modelSeenSeqs.size, 0);
-    assert.deepEqual(seqs(st.unread), [1]);
-    h.socialV2.paused = false;
-    h.cfg.socialV2.enabled = true;
-  }
-});
 
 await test('an evicted unread window cannot drag the acknowledged watermark back to zero', async ({ h, st, request, append }) => {
   h.cfg.socialV2.context.unreadLimit = 5;

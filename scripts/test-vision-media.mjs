@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { safeFetchBuffer } from '../src/safe-fetch.js';
+import { safeFetchBuffer } from '../src/media/safe-fetch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -32,11 +32,8 @@ function check(name, cond, extra = '') {
 }
 
 // 1. 配置
-// 多模态模型清单：DSH 0.1.5 的 llm-deepseek 里声明 inputModalities 含 image 的模型。
-// deepseek-flash（DeepSeek-V41-Flash）是当前默认；deepseek-v4-flash-vision-exp 为历史默认。
-const MULTIMODAL_MODELS = ['deepseek-flash', 'deepseek-v4-flash-vision-exp'];
-check('config.dsh.model 为多模态模型', MULTIMODAL_MODELS.includes(config.dsh?.model), `当前 ${config.dsh?.model}`);
-check('config.dsh.reasoningEffort 为 max', config.dsh?.reasoningEffort === 'max', `当前 ${config.dsh?.reasoningEffort}`);
+// 模型选型已上移到网关（桥接不再持有 config.dsh）：图片理解由网关侧的模型配置决定，
+// 桥接只负责把图片按 media 管线交给网关动作。这里只检查桥接侧的图片工具开关。
 check('config.socialV2.tools.getImages 默认开启', config.socialV2?.tools?.getImages !== false);
 
 // 2. safe-fetch SSRF

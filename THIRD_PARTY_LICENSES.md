@@ -10,7 +10,7 @@
 | [`@deepseek-ai/dsh`](https://github.com/deepseek-ai/deepseek-harness) 及其 `@deepseek-ai/*` 包 | MIT | DeepSeek Harness 本体与官方 API 客户端 |
 | [`@snowluma/sdk`](https://www.npmjs.com/package/@snowluma/sdk) / [`@snowluma/mcp`](https://www.npmjs.com/package/@snowluma/mcp) | ⚠️ **声明为 `SEE LICENSE IN LICENSE`，但包里没有 LICENSE 文件**（见下） | 本项目通过 npm 依赖使用；计划在 QSH 里**移除这两个依赖**（见下） |
 | [SnowLuma](https://github.com/SnowLuma/SnowLuma) 本体 | SnowLuma 源码可见非商业许可（非 OSI 开源） | **本项目不在仓库内包含、也不分发 SnowLuma 的源码或二进制**，只通过 OneBot v11 协议与它通信（另只读其 `config/onebot_*.json` 以发现 token）。⚠️ 例外见下：`npm install` 会对两个 `@snowluma/*` **npm 包**的本地安装副本做一次机械修补（不触碰 SnowLuma 本体，也不触碰任何原生组件） |
-| `@modelcontextprotocol/sdk`、`js-yaml`、`zod` 等 | MIT / ISC | 见各自包内 LICENSE |
+| [`axios`](https://www.npmjs.com/package/axios) | MIT | 见包内 LICENSE |
 
 #### ⚠️ 已知的依赖许可瑕疵（`@snowluma/sdk` / `@snowluma/mcp`）
 
@@ -109,7 +109,7 @@ SnowLuma 采用「源码可见非商业许可」（[LICENSE](https://github.com/
 
 ⇒ **本项目永不安装、复制、打包或自动部署 SnowLuma 及其原生组件，也不程序化启动/结束它的进程。**
 只做端口探测与状态查询，缺失时告诉用户自己去官方渠道下载与启动。（这条已升级为设计不变量 L6，
-见规划集的 `QSH_PLAN.md` §6.0；历史上 `src/mcp-host-server.js` 的 `start_snowluma`/`stop_snowluma`
+见规划集的 `QSH_PLAN.md` §6.0；历史上 `src/mcp/mcp-host-server.js` 的 `start_snowluma`/`stop_snowluma`
 违反它，属待删除项。）
 
 **⚠️ 下面这些会让 §4(a) 直接生效（"变现即触发"，与代码是否开源无关），请不要做**：

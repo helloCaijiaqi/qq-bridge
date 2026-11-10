@@ -19,7 +19,7 @@ const ok = (cond, name, extra = '') => {
 // ── 离线部分：纯函数边界 ────────────────────────────────────────────────────
 console.log('## 纯函数边界');
 {
-  const core = await import(new URL('../src/voice-core.js', import.meta.url).href);
+  const core = await import(new URL('../src/media/voice-core.js', import.meta.url).href);
 
   ok(core.listAudioFiles(path.join(ROOT, 'no-such-dir-xyz')).length === 0, '目录不存在 → 返回空数组（不抛）');
   ok(core.describeAudio(null) === '未知音频', 'describeAudio(null) 不炸');

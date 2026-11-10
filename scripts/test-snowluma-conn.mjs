@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   discoverSnowLumaConnection, persistToken, readOneBotHttpTokens, readOneBotTokens, snowLumaHomeCandidates
-} from '../src/snowluma-conn.js';
+} from '../src/integrations/snowluma-conn.js';
 // 独立发语音工具在仓库上一级（不在本仓库里）：位置解析与"不在时怎么跳过"走共享口径。
 import { hasVoiceTool, skipVoiceTool, voiceToolPath } from './voice-tool-locator.mjs';
 
@@ -104,7 +104,7 @@ console.log('## token 写回 config.json');
 
 console.log('## 独立工具确实用它（源码级）');
 {
-  // 独立工具的入口文件在仓库上一级的 voice-tool/；共享内核仍是本仓库 src/snowluma-conn.js
+  // 独立工具的入口文件在仓库上一级的 voice-tool/；共享内核仍是本仓库 src/integrations/snowluma-conn.js
   for (const rel of ['voice-cli.mjs', 'voice-gui.mjs']) {
     const src = readTool(rel);
     if (src === null) { skipVoiceTool(`${rel} 是否引入自发现模块（snowluma-conn.js / discoverSnowLumaConnection）`); continue; }

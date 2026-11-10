@@ -48,7 +48,6 @@ const httpCalls = (h) => h.calls.http.filter((c) => String(c.url).endsWith('/fet
 await test('WS 正常时走 WS，不额外打 HTTP', async () => {
   const h = await bridgeHarness({ globals: { SnowLumaWebSocketClient: WsUpBot } });
   try {
-    h.setMode('reserved2');
     const synced = await h.syncStickerLibrary(true);
     assert.ok(synced, '同步应当成功');
     assert.equal(synced.via, 'ws');
@@ -61,7 +60,6 @@ await test('WS 正常时走 WS，不额外打 HTTP', async () => {
 await test('WS 挂了自动改走 OneBot HTTP，结果标 via=http', async () => {
   const h = await bridgeHarness({ globals: { SnowLumaWebSocketClient: WsDownBot } });
   try {
-    h.setMode('reserved2');
     const synced = await h.syncStickerLibrary(true);
     assert.ok(synced, 'WS 失败时必须有兜底，而不是整条链路失败');
     assert.equal(synced.via, 'http');
@@ -83,7 +81,6 @@ await test('HTTP 兜底也失败时仍然返回 null（不炸、不清空本地�
     }
   });
   try {
-    h.setMode('reserved2');
     const synced = await h.syncStickerLibrary(true);
     assert.equal(synced, null, '两条路都失败时按原约定返回 null（调用方用缓存）');
   } finally { await h.close(); }
@@ -102,7 +99,6 @@ await test('HTTP 返回的不是数组时不合并（防拿坏数据清空表情
     }
   });
   try {
-    h.setMode('reserved2');
     const synced = await h.syncStickerLibrary(true);
     assert.equal(synced, null);
   } finally { await h.close(); }

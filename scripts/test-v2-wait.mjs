@@ -12,7 +12,7 @@ import {
   UNFINISHED_PROMPT_REPLIES,
   END_ROUND_WAIT_MIN_MS,
   END_ROUND_WAIT_MAX_MS
-} from '../src/v2-wait.js';
+} from '../src/chat/v2-wait.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');

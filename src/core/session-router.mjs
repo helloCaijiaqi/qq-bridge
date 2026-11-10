@@ -1,6 +1,11 @@
 /**
  * Per-conversation policy routing for the QQ bridge.
  *
+ * ⚠️ 当前未接线（NOT WIRED）：bridge.js 仍读全局 mode/preset，本模块只有
+ * `session-router.test.mjs` 在跑（纯函数契约测试）。保留它是为了让路由规则先
+ * 有可审阅、可测试的形状；真正接线前不要假设线上行为已经按会话分流。
+ * 接线时需要同时改三处：读策略、写策略（含 updatedBy 审计落盘）、租约/重启恢复。
+ *
  * Why this module exists (P2 of QSH_PLAN.md §3):
  *   The bridge historically kept ONE process-global `currentMode`. That makes
  *   "this group runs simulation, but the admin's private chat runs closed-agent"

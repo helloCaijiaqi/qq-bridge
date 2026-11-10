@@ -477,9 +477,6 @@ h1 {
   float:right;
   color:var(--accent)
 }
-#metricMode {
-  font-size:22px
-}
 #metricSnowluma {
   font-size:19px
 }
@@ -850,10 +847,7 @@ tr:last-child td {
   background:var(--pill-red-bg);
   color:var(--pill-red-fg)
 }
-#sessionList,#pendingList {
-  overflow:auto
-}
-.tool-log-table,.slang-scroll {
+.tool-log-table {
   overflow:auto;
   border:1px solid var(--card-border);
   border-radius:10px;
@@ -864,10 +858,7 @@ tr:last-child td {
   min-width:1000px;
   table-layout:fixed
 }
-.slang-scroll table {
-  min-width:900px
-}
-.tool-log-table thead th,.slang-scroll thead th {
+.tool-log-table thead th {
   position:sticky;
   top:0;
   background:var(--surface-hover);
@@ -885,31 +876,6 @@ tr:last-child td {
 .tool-log-cell.expanded {
   white-space:pre-wrap;
   overflow-wrap:anywhere
-}
-.slang-tabs {
-  display:flex;
-  gap:5px;
-  border-bottom:1px solid var(--card-border);
-  margin:22px 0 18px
-}
-.slang-tab {
-  border:0;
-  border-radius:0;
-  background:transparent;
-  padding:10px 18px;
-  color:var(--muted);
-  font-size:13px
-}
-.slang-tab.active {
-  color:var(--accent);
-  border-bottom:2px solid var(--accent);
-  background:transparent
-}
-.slang-panel {
-  display:none
-}
-.slang-panel.active {
-  display:block
 }
 .empty-state {
   padding:38px 20px;
@@ -1091,9 +1057,6 @@ tr:last-child td {
   .metric strong {
     font-size:23px
   }
-  #metricMode {
-    font-size:18px
-  }
   #metricSnowluma {
     font-size:16px
   }
@@ -1205,9 +1168,6 @@ tr:last-child td {
     font-size:24px;
     margin:5px 0 2px
   }
-  #metricMode {
-    font-size:20px
-  }
   #metricSnowluma {
     font-size:17px
   }
@@ -1298,18 +1258,6 @@ tr:last-child td {
   }
   th,td {
     padding:10px
-  }
-  #sessionList table {
-    min-width:540px
-  }
-  #pendingList table {
-    min-width:420px
-  }
-  .slang-tabs {
-    gap:0
-  }
-  .slang-tab {
-    padding:10px 14px
   }
   .modal {
     padding:22px
@@ -1765,14 +1713,7 @@ button:active:not(:disabled) {
     <div class="nav-label">工作空间</div>
     <nav id="mainNav">
       <button data-view="overview" class="nav-item active" aria-current="page"><span class="nav-icon" aria-hidden="true">◫</span>运行总览</button>
-      <button data-view="sessions" class="nav-item"><span class="nav-icon" aria-hidden="true">☷</span>会话与审批<span class="nav-count" id="pendingCount">—</span></button>
-      <button data-view="persona" class="nav-item"><span class="nav-icon" aria-hidden="true">◉</span>人格与角色</button>
-      <div class="nav-label">聊天行为</div>
-      <button data-view="social-v2" class="nav-item"><span class="nav-icon" aria-hidden="true">◈</span>二代仿真<span class="nav-note">V2</span></button>
-      <button data-view="social-v1" class="nav-item"><span class="nav-icon" aria-hidden="true">◇</span>一代仿真<span class="nav-note">V1</span></button>
-      <button data-view="slang" class="nav-item"><span class="nav-icon" aria-hidden="true">▤</span>黑话词库</button>
       <div class="nav-label">管理</div>
-      <button data-view="usage" class="nav-item"><span class="nav-icon" aria-hidden="true">◧</span>令牌与花费</button>
       <button data-view="access" class="nav-item"><span class="nav-icon" aria-hidden="true">⊙</span>访问与安全</button>
       <button data-view="operations" class="nav-item"><span class="nav-icon" aria-hidden="true">⌘</span>调试与运维</button>
       <button data-view="reference" class="nav-item"><span class="nav-icon" aria-hidden="true">ⓘ</span>工具参考</button>
@@ -1792,223 +1733,26 @@ button:active:not(:disabled) {
       <div id="overviewSummary" class="overview-summary span-all" data-page="overview">
         <div class="metric"><span>DSH 连接</span><strong id="metricDsh">连接中</strong><small id="metricDshHint">等待服务响应</small></div>
         <div class="metric"><span>SnowLuma 上游</span><strong id="metricSnowluma">读取中</strong><small id="metricSnowlumaHint">等待网关健康上报</small></div>
-        <div class="metric"><span>当前运行模式</span><strong id="metricMode">—</strong><small id="metricRole">正在读取角色</small></div>
-        <button class="metric metric-link" data-view="sessions"><span>已建立会话</span><strong id="metricSessions">—</strong><small>查看会话映射 <span aria-hidden="true">↗</span></small></button>
-        <button class="metric metric-link" data-view="sessions" data-target="section-pending"><span>待处理请求</span><strong id="metricPending">—</strong><small>提问与工具审批 <span aria-hidden="true">↗</span></small></button>
+        <div class="metric"><span>二代 AI 会话</span><strong id="metricV2">读取中</strong><small id="metricV2Hint">观察仿真 AI 的运行状态</small></div>
       </div>
       <div class="grid">
-        <section id="section-mode" data-page="overview" class="card span-all">
-      <h2>运行模式</h2>
-      <div class="mode-row" id="modeRow">
-        <button data-mode="chat" aria-pressed="false"><span class="mode-indicator" aria-hidden="true"></span><strong>聊天模式</strong><small>白名单内，随时对话</small></button>
-        <button data-mode="closed-agent" aria-pressed="false"><span class="mode-indicator" aria-hidden="true"></span><strong>封闭 Agent</strong><small>仅管理员，完整工具</small></button>
-        <button data-mode="reserved" aria-pressed="false"><span class="mode-indicator" aria-hidden="true"></span><strong>一代仿真</strong><small>按策略自然参与群聊</small></button>
-        <button data-mode="reserved2" aria-pressed="false"><span class="mode-indicator" aria-hidden="true"></span><strong>二代仿真</strong><small>自主阅读、发言与潜水</small></button>
-      </div>
-      <div class="row" style="margin-top:12px">
-        <label style="flex:1;margin:0">封闭 Agent 使用的 DSH 预设</label>
-        <select id="closedPreset" style="max-width:260px"><option value="">（DSH 默认 preset）</option></select>
-      </div>
-      <div class="meta">切换后即时保存。仿真参数可在左侧对应页面调整；封闭 Agent 仅允许管理员私聊。</div>
-    </section>
-<section id="section-sessions" data-page="sessions" class="card span-all">
-      <h2>会话映射</h2>
-      <div id="sessionList">加载中…</div>
-    </section>
-<section id="section-pending" data-page="sessions" class="card span-all">
-      <h2>挂起审批 / 提问</h2>
-      <div id="pendingList">加载中…</div>
-    </section>
+        </section>
 <section id="section-activity" data-page="overview" class="card">
       <h2>活动日志（最近 100 条）</h2>
       <pre id="activity">（空）</pre>
     </section>
-<section id="section-persona" data-page="persona" class="card span-all">
-      <h2>人格与角色</h2>
-      <div class="meta">当前人格：<span id="roleText">-</span> ｜ 状态：<span id="roleModeText">-</span></div>
-
-      <div class="layer-note">
-        <strong>两层提示词的分工</strong>
-        <ol>
-          <li><b>仿真提示词</b>（预设内置）：AI 怎么调工具、怎么参与群聊 —— <i>行为与协议</i>。</li>
-          <li><b>人格提示词</b>（本页编辑）：AI 是谁、什么性格、怎么说话 —— <i>人设与语气</i>。</li>
-        </ol>
-        <p>每条消息发给 AI 时，按 <code>仿真提示词 → 人格提示词 → 本轮消息</code> 的顺序拼装。人格层保存即生效；仿真层需重启 DSH。</p>
-      </div>
-
-      <h3>人格列表 <span class="meta" id="roleListHint"></span></h3>
-      <div id="roleList" class="persona-list">加载中…</div>
-
-      <details class="settings-group" open>
-        <summary>编辑人格提示词</summary>
-        <div class="settings-content">
-          <div class="meta" id="roleEditorMeta">当前是「新建」模式：填好名称与内容后点「新建人格」。</div>
-          <div class="row">
-            <label style="flex:0 0 auto">注入上限（字符）</label>
-            <input type="number" id="roleInjectMax" min="1000" max="20000" step="500" style="flex:0 1 140px">
-            <button id="roleInjectMaxSave" class="small">保存上限</button>
-            <span class="meta" id="roleInjectMaxMsg">每条约 4~6k token 的成本护栏；按模式筛完小节后才截断。</span>
-          </div>
-          <label>人格名（中文 / 字母 / 数字 / 横线）</label>
-          <input type="text" id="newRoleName" placeholder="如：猫娘">
-          <label>人格提示词（Markdown）</label>
-          <textarea id="newRoleContent" class="role-editor" placeholder="- 性格：…&#10;- 说话风格：…&#10;- 背景设定：…"></textarea>
-          <div class="row" style="margin-top:8px">
-            <button id="roleCreate">新建人格</button>
-            <button id="roleDuplicate">另存为副本</button>
-            <button id="roleDelete" class="danger">删除</button>
-            <button id="roleFormReset">清空表单</button>
-            <span class="meta" id="roleCreateMsg"></span>
-          </div>
-          <div class="meta err" id="roleEditorWarnings"></div>
-        </div>
-      </details>
-
-      <details class="settings-group">
-        <summary>切换当前启用的人格</summary>
-        <div class="settings-content">
-          <div class="row" style="margin-top:10px">
-            <input type="text" id="roleInput" placeholder="选择已有角色或输入新角色名">
-            <button id="roleSet">设置</button>
-            <button id="roleClear">清除</button>
-          </div>
-          <div class="meta">清空当前人格后，AI 只按「仿真提示词」行动，不扮演任何角色。</div>
-        </div>
-      </details>
-
-      <h3 class="layer-heading">仿真提示词（预设内置）<span class="meta" id="simPromptStatus">加载中…</span></h3>
-      <div class="row" style="margin-bottom:8px">
-        <label style="flex:0 0 auto">仿真代次</label>
-        <select id="simPromptPreset" style="flex:0 1 280px">
-          <option value="qq-chat-v2">二代仿真（reserved2 · qq-chat-v2）</option>
-          <option value="qq-chat">一代仿真（reserved · qq-chat）</option>
-        </select>
-        <span class="meta">两代机制不同（一代空格分条 / 二代一切皆工具），提示词各自独立。</span>
-      </div>
-      <div class="meta" id="simPromptWarnings"></div>
-      <textarea id="simPromptText" class="code-area" spellcheck="false" readonly></textarea>
-      <div class="row" style="margin-top:8px">
-        <button id="simPromptEdit">编辑</button>
-        <button id="simPromptSave" disabled>保存并同步到 DSH</button>
-        <button id="simPromptRestore">还原上次备份</button>
-        <button id="simPromptCancel" disabled>取消编辑</button>
-        <span class="meta" id="simPromptMsg"></span>
-      </div>
-      <div class="meta" id="simPromptRestart"></div>
-    </section>
-<section id="section-social-v1" data-page="social-v1" class="card span-all">
-      <h2>一代仿真模式（reserved）</h2>
-      <div class="meta" id="socialStatus">加载中…</div>
-
-      <div class="row" style="margin-top:10px">
-        <label style="flex:1">普通消息触发概率（观望期）</label><input type="number" id="sTrigger" step="0.05" min="0" max="1" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">活跃检测间隔（秒）</label>
-        <input type="number" id="sCheckMin" min="5" style="width:70px"> ~
-        <input type="number" id="sCheckMax" min="5" style="width:70px">
-      </div>
-      <div class="row">
-        <label style="flex:1">活跃回复延迟（秒）</label>
-        <input type="number" id="sActiveDelayMin" min="0" style="width:70px"> ~
-        <input type="number" id="sActiveDelayMax" min="0" style="width:70px">
-      </div>
-      <details class="settings-group"><summary>群聊活跃超时主动退出</summary><div class="settings-content">
-      <div class="row">
-        <label style="flex:1">启用</label><input type="checkbox" id="sActiveDurationEnabled" style="width:auto">
-      </div>
-      <div class="row">
-        <label style="flex:1">活跃最长持续时间（分）</label>
-        <input type="number" id="sActiveDurationMin" min="1" style="width:70px"> ~
-        <input type="number" id="sActiveDurationMax" min="1" style="width:70px">
-      </div>
-      <div class="meta">从进入群聊活跃那一刻起随机取一个时长；到点后即使群里还在聊，也会提示 AI 说一句收尾话并回到观望。私聊不自动退场。</div>
-
-      <div class="row">
-        <label style="flex:1">冷场窗口（分）</label><input type="number" id="sIdleWindow" min="1" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">冷场试探概率</label><input type="number" id="sIdleRetry" step="0.05" min="0" max="1" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">试探等待窗口（分）</label><input type="number" id="sIdleWait" min="1" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">普通消息沉默概率</label><input type="number" id="sSkipProb" step="0.05" min="0" max="1" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">抬杠时退让概率</label><input type="number" id="sSurrenderProb" step="0.05" min="0" max="1" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">附带上下文条数</label><input type="number" id="sContextWindow" min="1" max="100" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">单条消息长度上限（字）</label><input type="number" id="sMaxChars" min="1" style="width:80px">
-      </div>
-
-      </div></details>
-<details class="settings-group"><summary>分条发送（按空格分句）</summary><div class="settings-content">
-      <div class="meta" style="margin-bottom:8px">AI 用空格表示“分成下一条消息”；中英文/数字之间的空格也会被当成分条信号，不想分条就不要加空格、用标点连接。单条只做安全长度上限，不再限制条数。</div>
-      <div class="row">
-        <label style="flex:1">启用分条发送</label><input type="checkbox" id="sBurstEnabled" style="width:auto">
-      </div>
-      <div class="row">
-        <label style="flex:1">条间间隔（毫秒）</label>
-        <input type="number" id="sBurstIntervalMin" min="0" style="width:70px"> ~
-        <input type="number" id="sBurstIntervalMax" min="0" style="width:70px">
-      </div>
-      <div class="row">
-        <label style="flex:1">长间隔概率</label><input type="number" id="sLongGapProb" step="0.05" min="0" max="1" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">长间隔范围（毫秒）</label>
-        <input type="number" id="sLongGapMin" min="0" style="width:70px"> ~
-        <input type="number" id="sLongGapMax" min="0" style="width:70px">
-      </div>
-      <label>必回关键词（逗号分隔）</label>
-      <input type="text" id="sKeywords" placeholder="deepseek, 在吗">
-
-      </div></details>
-<details class="settings-group"><summary>主动开话题（观望期第三种触发）</summary><div class="settings-content">
-      <div class="row">
-        <label style="flex:1">启用主动开话题</label><input type="checkbox" id="sProactiveEnabled" style="width:auto">
-      </div>
-      <div class="row">
-        <label style="flex:1">群安静多久判定（分）</label><input type="number" id="sProactiveIdle" min="1" style="width:80px">
-      </div>
-      <div class="row">
-        <label style="flex:1">判定间隔（分）</label>
-        <input type="number" id="sProactiveCheckMin" min="1" style="width:70px"> ~
-        <input type="number" id="sProactiveCheckMax" min="1" style="width:70px">
-      </div>
-      <div class="row">
-        <label style="flex:1">判定成功概率</label><input type="number" id="sProactiveProb" step="0.05" min="0" max="1" style="width:80px">
-      </div>
-
-</div></details>
-<div class="save-bar">      <div class="row" style="margin-top:10px">
-        <button id="socialSave">保存社交配置</button>
-        <button id="socialFlush">立刻投喂摘要</button>
-        <span class="meta" id="socialMsg"></span>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <select id="sStateKey" style="flex:1"><option value="">选择会话</option></select>
-        <button id="sStateActive" class="small">设为活跃</button>
-        <button id="sStateIdle" class="small">设为观望</button>
-      </div>
-      <div class="meta">一代仿真模式状态机：观望期按“明确点名 / 小概率”触发进入活跃；活跃期每 10~20 秒批量查看新消息并回应；群聊活跃超过随机上限会主动提示 AI 收尾退场；冷场后大概率回观望、小概率让 AI 试探一句。可手动强制切换状态。</div>
-    </div></section>
-<section id="section-social-v2" data-page="social-v2" class="card span-all">
-      <h2>二代仿真模式（reserved2）控制台</h2>
+</section>
+</section>
+<section id="section-social-v2" data-page="operations" class="card span-all">
+      <h2>二代仿真会话控制</h2>
       <div class="meta">配置保存后写入 config.json 并热更新；工具开关决定 AI 能调用哪些工具。已接入开关的工具在<b>重启 DSH 后</b>会从工具清单里彻底消失（少一份 schema 就少一份每次请求的 token）；发送类等跨模式共用的工具只在调用时被桥接拒绝，清单不变。</div>
 
       <div class="row" style="margin-top:10px">
         <label style="flex:1">启用二代模式</label><input type="checkbox" id="v2Enabled" style="width:auto">
-        <label style="flex:1">agentPreset</label><input type="text" id="v2AgentPreset" placeholder="qq-chat-v2" style="max-width:200px">
       </div>
       <div class="row" style="margin-top:6px">
         <label style="flex:1">提供推荐值给 AI</label><input type="checkbox" id="v2ProvideRecommendations" style="width:auto">
-        <span class="meta" style="flex:2">关闭后 qq_get_prompt 不再返回推荐值，AI 完全自主判断。</span>
+        <span class="meta" style="flex:2">关闭后 chat_qq_get_prompt 不再返回推荐值，AI 完全自主判断。</span>
       </div>
       <div class="row" style="margin-top:10px">
         <button id="v2PauseBtn" class="danger">暂停二代 AI</button>
@@ -2020,43 +1764,39 @@ button:active:not(:disabled) {
 
       <details class="settings-group"><summary>工具开关（关闭后 AI 不再拿到该工具；需重启 DSH 刷新工具清单，重启前仅调用时拒绝）</summary><div class="settings-content">
       <div class="v2-tool-list" id="v2Tools">
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getPrompt"> <span><b>qq_get_prompt</b><span class="meta">查看角色卡、推荐值、可用工具、当前唤醒配置</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getUnread"> <span><b>qq_get_unread_messages</b><span class="meta">查看未读消息，不自动标记已读</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getRecent"> <span><b>qq_get_recent_messages</b><span class="meta">查看最近消息，支持 offset 扩大范围</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="socialState"> <span><b>qq_social_state</b><span class="meta">查看当前 WakeConfig、未读数、上次唤醒原因等</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendGroup"> <span><b>qq_send_group_message</b><span class="meta">向指定群发送一条纯文本消息</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendPrivate"> <span><b>qq_send_private_message</b><span class="meta">向指定好友发送一条纯文本消息</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="reply"> <span><b>qq_reply</b><span class="meta">引用/回复某条群消息并发送文本</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendBurst"> <span><b>qq_send_burst</b><span class="meta">按数组分多条发送，桥接自动加真人化间隔</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendMessage"> <span><b>qq_send_message</b><span class="meta">统一发送：一条/多条/引用/自定义或按字数计算间隔</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendPoke"> <span><b>qq_send_poke</b><span class="meta">发送 QQ 拍一拍（群聊传 targetUserId，私聊可省）</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="waitMessages"> <span><b>qq_wait_for_messages</b><span class="meta">短暂等待新消息，有新消息立即返回或超时返回</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="feedback"> <span><b>qq_report_feedback</b><span class="meta">向控制台反馈 AI 遇到的问题/困惑</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getMyRecent"> <span><b>qq_get_my_recent_messages</b><span class="meta">查看自己最近发过的消息，避免重复</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getMessageDetail"> <span><b>qq_get_message_detail</b><span class="meta">按 message_id 查看单条消息完整内容</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getImages"> <span><b>qq_get_message_images</b><span class="meta">查看消息中的图片/表情内容</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getForwardMsg"> <span><b>qq_get_forward_msg</b><span class="meta">查看当前会话收到的合并转发消息内容</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getActiveMembers"> <span><b>qq_get_active_members</b><span class="meta">查看最近活跃成员列表</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="setWakeConfig"> <span><b>qq_set_wake_config</b><span class="meta">设置唤醒/潜水条件：无限期、有限时间、@/名字/关键词/概率等</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="markRead"> <span><b>qq_mark_read</b><span class="meta">标记当前未读为已读（看过但决定不回复）</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="memory"> <span><b>qq_memory_append / qq_memory_query</b><span class="meta">轻量记忆：话题/想说的话/群友印象</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="slangQuery"> <span><b>qq_slang_query</b><span class="meta">查询已确认黑话/梗/网络表达</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="slangSubmit"> <span><b>qq_slang_submit</b><span class="meta">AI 提交陌生词/黑话给管理员筛选</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="listStickers"> <span><b>qq_list_stickers</b><span class="meta">查看/搜索 QQ 收藏表情（含备注和本地笔记）</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getStickerImage"> <span><b>qq_get_sticker_image</b><span class="meta">看图理解没有备注的收藏表情</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendSticker"> <span><b>qq_send_sticker</b><span class="meta">发送收藏表情（一条消息只能一张，不能带文字）</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="collectSticker"> <span><b>qq_collect_sticker</b><span class="meta">AI 偶尔收藏别人发的表情并写简短备注</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getSelfImage"> <span><b>qq_get_self_image</b><span class="meta">查看自己的默认 Q 版形象图片</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="stickerNote"> <span><b>qq_sticker_note</b><span class="meta">给表情记录本地含义/标签/用法</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="setStickerRemark"> <span><b>qq_set_sticker_remark</b><span class="meta">修改 QQ 官方表情备注（默认禁用，慎用）</span></span></label>
-        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendVoice"> <span><b>qq_send_voice / qq_list_voices</b><span class="meta">发送语音条（只能发语音库里的音频；偶然而为的强表达）</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getPrompt"> <span><b>chat_qq_get_prompt</b><span class="meta">查看角色卡、推荐值、可用工具、当前唤醒配置</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getUnread"> <span><b>chat_qq_get_unread</b><span class="meta">查看未读消息，不自动标记已读</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getRecent"> <span><b>chat_qq_get_recent</b><span class="meta">查看最近消息，支持 offset 扩大范围</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="socialState"> <span><b>chat_qq_social_state</b><span class="meta">查看当前 WakeConfig、未读数、上次唤醒原因等</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendGroup"> <span><b>chat_qq_send_group_message</b><span class="meta">向指定群发送一条纯文本消息</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendPrivate"> <span><b>chat_qq_send_private_message</b><span class="meta">向指定好友发送一条纯文本消息</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="reply"> <span><b>chat_qq_reply</b><span class="meta">引用/回复某条群消息并发送文本</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendBurst"> <span><b>chat_qq_send_burst</b><span class="meta">按数组分多条发送，桥接自动加真人化间隔</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendMessage"> <span><b>chat_qq_send_message</b><span class="meta">统一发送：一条/多条/引用/自定义或按字数计算间隔</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendPoke"> <span><b>chat_qq_poke</b><span class="meta">发送 QQ 拍一拍（群聊传 targetUserId，私聊可省）</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="waitMessages"> <span><b>chat_qq_wait</b><span class="meta">短暂等待新消息，有新消息立即返回或超时返回</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="feedback"> <span><b>chat_report_feedback</b><span class="meta">向控制台反馈 AI 遇到的问题/困惑</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getMyRecent"> <span><b>chat_qq_get_my_recent</b><span class="meta">查看自己最近发过的消息，避免重复</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getMessageDetail"> <span><b>chat_qq_get_message_detail</b><span class="meta">按 message_id 查看单条消息完整内容</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getImages"> <span><b>chat_qq_get_message_images</b><span class="meta">查看消息中的图片/表情内容</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getForwardMsg"> <span><b>chat_qq_get_forward_msg</b><span class="meta">查看当前会话收到的合并转发消息内容</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getActiveMembers"> <span><b>chat_qq_get_active_members</b><span class="meta">查看最近活跃成员列表</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="setWakeConfig"> <span><b>chat_qq_set_wake</b><span class="meta">设置唤醒/潜水条件：无限期、有限时间、@/名字/关键词/概率等</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="markRead"> <span><b>chat_qq_mark_read</b><span class="meta">标记当前未读为已读（看过但决定不回复）</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="listStickers"> <span><b>chat_qq_list_stickers</b><span class="meta">查看/搜索 QQ 收藏表情（含备注和本地笔记）</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getStickerImage"> <span><b>chat_qq_get_sticker_image</b><span class="meta">看图理解没有备注的收藏表情</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendSticker"> <span><b>chat_qq_send_sticker</b><span class="meta">发送收藏表情（一条消息只能一张，不能带文字）</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="collectSticker"> <span><b>chat_qq_collect_sticker</b><span class="meta">AI 偶尔收藏别人发的表情并写简短备注</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="getSelfImage"> <span><b>chat_qq_get_self_image</b><span class="meta">查看自己的默认 Q 版形象图片</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="stickerNote"> <span><b>chat_qq_sticker_note</b><span class="meta">给表情记录本地含义/标签/用法</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="setStickerRemark"> <span><b>chat_qq_set_sticker_remark</b><span class="meta">修改 QQ 官方表情备注（默认禁用，慎用）</span></span></label>
+        <label class="v2-tool-item"><input type="checkbox" data-v2-tool="sendVoice"> <span><b>chat_qq_send_voice / chat_qq_list_voices</b><span class="meta">发送语音条（只能发语音库里的音频；偶然而为的强表达）</span></span></label>
       </div>
-      <div class="meta" style="margin-top:6px">二代黑话学习：AI 可用 <code>qq_slang_submit</code> 提交陌生词，也可由桥接自动提取；管理员在「黑话词库」页面筛选确认后，词条会自动写入黑话提示词并注入 <code>qq_get_prompt</code> 与后续唤醒。</div>
 
       </div></details>
 <details class="settings-group"><summary>语音库与语音发送（调试）</summary><div class="settings-content">
       <div class="meta" style="margin-bottom:8px">
-        语音库目录：<code>qq-bridge/audio/</code>（改 <code>socialV2.voice.dir</code> 可换）。把音频文件丢进去即可被 AI 用 <code>qq_send_voice</code> 发出；
+        语音库目录：<code>qq-bridge/audio/</code>（改 <code>socialV2.voice.dir</code> 可换）。把音频文件丢进去即可被 AI 用 <code>chat_qq_send_voice</code> 发出；
         本面板用于调试与试发 —— 试发走的是与 AI 通道相同的解析/校验/限流路径（<code>/api/voice/send</code>），只是由你在控制台触发。
       </div>
       <div class="row" style="flex-wrap:wrap;gap:8px;align-items:center">
@@ -2123,7 +1863,7 @@ button:active:not(:disabled) {
 
       </div></details>
 <details class="settings-group"><summary>发送限制</summary><div class="settings-content">
-      <div class="meta" style="margin-bottom:8px">二代不再按空格自动拆条；AI 要分多条必须显式传数组或用 qq_send_burst。</div>
+      <div class="meta" style="margin-bottom:8px">二代不再按空格自动拆条；AI 要分多条必须显式传数组或用 chat_qq_send_burst。</div>
       <div class="row">
         <label style="flex:1">允许多条发送</label><input type="checkbox" id="v2BurstEnabled" style="width:auto">
         <label style="flex:1">单次最多条数</label><input type="number" id="v2BurstMax" min="1" style="width:70px">
@@ -2155,7 +1895,7 @@ button:active:not(:disabled) {
       <textarea id="v2SendHint" rows="2" placeholder="例如：普通闲聊建议一次 1~3 条，条间 1~3 秒…"></textarea>
 
       </div></details>
-<details class="settings-group"><summary>等待工具参数（qq_wait_for_messages）</summary><div class="settings-content">
+<details class="settings-group"><summary>等待工具参数（chat_qq_wait）</summary><div class="settings-content">
       <div class="row">
         <label style="flex:1">默认等待（毫秒）</label><input type="number" id="v2WaitDefaultMs" min="100" style="width:90px">
         <label style="flex:1">最小等待（毫秒）</label><input type="number" id="v2WaitMinMs" min="100" style="width:90px">
@@ -2194,7 +1934,7 @@ button:active:not(:disabled) {
       <div class="row">
         <label style="flex:1">提示中列出常用表情数</label><input type="number" id="v2StickerPromptMax" min="1" max="30" style="width:90px">
         <label style="flex:1">在 prompt/唤醒里附带表情摘要</label><input type="checkbox" id="v2StickerIncludePrompt" style="width:auto">
-        <span class="meta" style="flex:2">关闭后 AI 仍可主动调用 qq_list_stickers，只是不主动喂到上下文。</span>
+        <span class="meta" style="flex:2">关闭后 AI 仍可主动调用 chat_qq_list_stickers，只是不主动喂到上下文。</span>
       </div>
       <div class="row">
         <label style="flex:1">AI 收藏表情</label><input type="checkbox" id="v2StickerCollectEnabled" style="width:auto">
@@ -2215,7 +1955,7 @@ button:active:not(:disabled) {
       </div>
 
       </div></details>
-<details class="settings-group"><summary>反馈工具参数（qq_report_feedback）</summary><div class="settings-content">
+<details class="settings-group"><summary>反馈工具参数（chat_report_feedback）</summary><div class="settings-content">
       <div class="row">
         <label style="flex:1">反馈最大长度</label><input type="number" id="v2FeedbackMaxLength" min="1" style="width:90px">
         <label style="flex:1">错误级通知 owner</label><input type="checkbox" id="v2FeedbackNotifyOwner" style="width:auto">
@@ -2235,16 +1975,6 @@ button:active:not(:disabled) {
         <span class="meta" id="v2ToolLogMsg"></span>
       </div>
       <div id="v2ToolLogOutput" class="tool-log-table">（空）</div>
-
-      </div></details>
-<details class="settings-group"><summary>轻量记忆（activeTopics / pendingThoughts / memberImpressions）</summary><div class="settings-content">
-      <div class="row">
-        <input type="text" id="v2MemoryKey" placeholder="group:123456789" style="flex:1">
-        <button id="v2MemoryLoad" class="small">加载记忆</button>
-        <button id="v2MemoryClearAll" class="small danger">清空全部</button>
-        <span class="meta" id="v2MemoryMsg"></span>
-      </div>
-      <div id="v2MemoryOutput" class="tool-log-table">（空）</div>
 
       </div></details>
 <details class="settings-group"><summary>唤醒状态（AI 当前设置的下一次唤醒条件/倒计时）</summary><div class="settings-content">
@@ -2302,138 +2032,22 @@ button:active:not(:disabled) {
       <div class="meta" style="margin-top:4px">修改上面任意推荐/默认参数后，必须点这个按钮才会持久化；保存后会自动应用到仍使用默认唤醒配置的会话，重启后仍然保留。</div>
 
       </div></section>
-<section id="section-slang" data-page="slang" class="card span-all">
-      <h2>群聊黑话 / 网络用语库</h2>
-      <div class="meta">DSH 会从群聊中自动提取疑似黑话候选；二代仿真模式下 AI 也可用 <code>qq_slang_submit</code> 主动提交陌生词。候选可批量送 DSH 深度联网研究，研究结果回到控制台由你删改修正后转正；确认后的词条会写入“黑话提示词”，注入一代/二代 AI 的聊天上下文，成为 AI 可查询和使用的记忆。</div>
-
-      <div class="slang-tabs">
-        <button class="slang-tab active" data-slang-tab="candidate">候选词</button>
-        <button class="slang-tab" data-slang-tab="confirmed">已确认</button>
-        <button class="slang-tab" data-slang-tab="rejected">已拒绝</button>
-      </div>
-      <span class="meta" id="slangMsg"></span>
-
-      <!-- 候选词面板 -->
-      <div class="slang-panel active" id="slangPanelCandidate">
-        <div class="row" style="margin-top:8px">
-          <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="slangCandidateSelectAll"> 全选</label>
-          <button id="slangBatchResearch" class="small">批量送 DSH 深度研究</button>
-          <button id="slangBatchConfirm" class="small">批量确认（有含义）</button>
-          <button id="slangBatchReject" class="small">批量拒绝</button>
-          <button id="slangBatchDeleteCand" class="small danger">批量删除候选</button>
-          <button id="slangExtract" class="small">立即提取候选</button>
-          <button id="slangResearch" class="small">研究全部候选</button>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <input type="text" id="slangSearchCand" placeholder="搜索词条 / 草稿含义 / 语境证据" style="flex:1">
-          <select id="slangLimitCand" style="width:110px">
-            <option value="50">每页 50</option>
-            <option value="100" selected>每页 100</option>
-            <option value="200">每页 200</option>
-            <option value="500">每页 500</option>
-          </select>
-        </div>
-        <div class="slang-scroll" id="slangCandidateList">加载中…</div>
-      </div>
-
-      <!-- 已确认面板 -->
-      <div class="slang-panel" id="slangPanelConfirmed">
-        <div class="row" style="margin-top:8px">
-          <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="slangConfirmedSelectAll"> 全选</label>
-          <button id="slangBatchDeleteConfirmed" class="small danger">批量删除已确认</button>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <input type="text" id="slangSearchConfirmed" placeholder="搜索词条 / 含义 / 用法 / 示例 / 来源" style="flex:1">
-          <select id="slangLimitConfirmed" style="width:110px">
-            <option value="50">每页 50</option>
-            <option value="100" selected>每页 100</option>
-            <option value="200">每页 200</option>
-            <option value="500">每页 500</option>
-          </select>
-        </div>
-        <div class="slang-scroll" id="slangConfirmedList">加载中…</div>
-      </div>
-
-      <!-- 已拒绝面板 -->
-      <div class="slang-panel" id="slangPanelRejected">
-        <div class="row" style="margin-top:8px">
-          <label style="display:flex;align-items:center;gap:6px;margin:0"><input type="checkbox" id="slangRejectedSelectAll"> 全选</label>
-          <button id="slangBatchRestore" class="small">恢复为候选</button>
-          <button id="slangBatchDeleteRejected" class="small danger">批量删除已拒绝</button>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <input type="text" id="slangSearchRejected" placeholder="搜索词条 / 拒绝原因" style="flex:1">
-          <select id="slangLimitRejected" style="width:110px">
-            <option value="50">每页 50</option>
-            <option value="100" selected>每页 100</option>
-            <option value="200">每页 200</option>
-            <option value="500">每页 500</option>
-          </select>
-        </div>
-        <div class="slang-scroll" id="slangRejectedList">加载中…</div>
-      </div>
-
-      <div class="divider"></div>
-      <div class="meta" style="margin-bottom:6px">手动添加黑话</div>
-      <div class="row">
-        <input type="text" id="slangContent" placeholder="词条，如：绝绝子" style="flex:1">
-        <input type="text" id="slangMeaning" placeholder="含义，如：很好、很棒" style="flex:1">
-      </div>
-      <div class="row" style="margin-top:6px">
-        <input type="text" id="slangUsage" placeholder="用法（可选）" style="flex:1">
-        <input type="text" id="slangExample" placeholder="示例（可选）" style="flex:1">
-      </div>
-      <div class="row" style="margin-top:8px">
-        <button id="slangAdd" class="small">添加入库（确认）</button>
-      </div>
-      <details style="margin-top:10px">
-        <summary class="meta">黑话系统参数（可调）</summary>
-        <div class="row">
-          <label style="flex:1">启用黑话学习</label><input type="checkbox" id="slangEnabled" style="width:auto">
-        </div>
-        <div class="row">
-          <label style="flex:1">触发提取最少消息数</label><input type="number" id="slangExtractMin" min="1" style="width:90px">
-        </div>
-        <div class="row">
-          <label style="flex:1">提取冷却（毫秒）</label><input type="number" id="slangCooldown" min="0" step="1000" style="width:110px">
-        </div>
-        <div class="row">
-          <label style="flex:1">研究触发阈值（逗号分隔）</label><input type="text" id="slangThresholds" placeholder="2,4,8" style="width:120px">
-        </div>
-        <div class="row">
-          <label style="flex:1">注入最大条数</label><input type="number" id="slangInjectMax" min="1" max="30" style="width:90px">
-        </div>
-        <div class="row">
-          <label style="flex:1">学习会话 preset</label><input type="text" id="slangLearnerPreset" placeholder="qq-chat" style="width:120px">
-        </div>
-        <div class="row">
-          <label style="flex:1">学习工作区名</label><input type="text" id="slangWorkspaceTitle" placeholder="QQ 黑话学习" style="width:120px">
-        </div>
-        <div class="row">
-          <label style="flex:1">自动联网研究</label><input type="checkbox" id="slangAutoResearch" style="width:auto">
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button id="slangConfigSave" class="small">保存黑话参数</button>
-          <span class="meta" id="slangConfigMsg"></span>
-        </div>
-      </details>
-    </section>
 <section id="section-reference" data-page="reference" class="card span-all">
-      <h2>DSH 侧 MCP 工具</h2>
-      <div class="meta">由 qq-bridge 的 MCP server 提供给 DSH agent；修改后需重启 DSH 才会刷新工具 schema。</div>
+      <h2>网关动作清单</h2>
+      <div class="meta">AI 通过 agent-gateway 的 <code>/v1/actions</code> 回投调用这些 QQ 动作；工具名由网关按 <code>chat_&lt;platform&gt;_&lt;action&gt;</code> 生成，QQ 平台即 <code>chat_qq_*</code> 为主名（历史别名 <code>qq_*</code> / <code>chat_*</code> 仍被识别）。动作与校验 schema 的权威来源是 <code>src/gateway/actions-manifest.json</code>，控制台开关（调试与运维页）可逐个关闭。</div>
       <table>
         <tr><th>工具</th><th>说明</th></tr>
-        <tr><td>qq_status</td><td>登录状态（只读）</td></tr>
-        <tr><td>qq_list_groups</td><td>群列表（只返回白名单群）</td></tr>
-        <tr><td>qq_get_group_members</td><td>群成员（只读，群号必须白名单）</td></tr>
-        <tr><td>qq_get_group_history</td><td>群历史（只读，含 message_id，可作引用目标）</td></tr>
-        <tr><td>qq_send_group_message</td><td>发群消息；可选 <code>replyToMessageId</code> 引用/回复</td></tr>
-        <tr><td>qq_reply</td><td>专用“引用/回复”：在群里引用某条消息并发送文本</td></tr>
-        <tr><td>qq_send_private_message</td><td>发私聊；可选 <code>replyToMessageId</code> 引用/回复</td></tr>
-        <tr><td>qq_slang_query</td><td>查询已确认黑话/梗/网络表达（只读）</td></tr>
-        <tr><td>qq_slang_submit</td><td>AI 提交陌生词/黑话给管理员筛选</td></tr>
+        <tr><td>chat_qq_get_prompt</td><td>查看推荐值、可用工具与当前唤醒配置</td></tr>
+        <tr><td>chat_qq_get_unread / chat_qq_get_recent / chat_qq_get_message_detail</td><td>读消息：未读、最近历史、单条详情（只读）</td></tr>
+        <tr><td>chat_qq_social_state / chat_qq_get_active_members / chat_qq_get_my_recent</td><td>会话状态、活跃成员、自己发过的消息（防重复）</td></tr>
+        <tr><td>chat_qq_send_group_message / chat_qq_send_private_message / chat_qq_reply / chat_qq_send_burst / chat_qq_send_message</td><td>发送文本：单条、引用回复、分条与真人化间隔</td></tr>
+        <tr><td>chat_qq_wait / chat_qq_mark_read / chat_qq_set_wake</td><td>等待新消息、标记已读、设置唤醒/潜水条件</td></tr>
+        <tr><td>chat_qq_get_message_images / chat_qq_get_forward_msg / chat_qq_poke</td><td>消息图片、合并转发内容、拍一拍</td></tr>
+        <tr><td>chat_qq_list_stickers / chat_qq_get_sticker_image / chat_qq_send_sticker / chat_qq_collect_sticker / chat_qq_sticker_note / chat_qq_set_sticker_remark</td><td>收藏表情的查看、发送、收藏与备注</td></tr>
+        <tr><td>chat_qq_send_voice / chat_qq_list_voices</td><td>语音条发送（仅语音库内音频，偶然而为的强表达）</td></tr>
+        <tr><td>chat_report_feedback</td><td>向控制台反馈 AI 遇到的问题/困惑</td></tr>
       </table>
-      <div class="meta" style="margin-top:10px">二代仿真模式工具：qq_get_prompt / qq_get_unread_messages / qq_get_recent_messages / qq_social_state / qq_send_burst / qq_send_message / qq_wait_for_messages / qq_set_wake_config / qq_mark_read / qq_memory_* / qq_slang_query / qq_slang_submit 等。</div>
+      <div class="meta" style="margin-top:10px">媒体链路（图片抓取、语音转写）由桥接内置的 <code>src/media/</code> 模块提供，全部只读；桥接没有本地执行类工具，代码执行发生在 agent-gateway 管理的智能体运行时里。</div>
     </section>
 <section id="section-whitelist" data-page="access" class="card span-all">
       <h2>白名单 / 管理员</h2>
@@ -2453,26 +2067,7 @@ button:active:not(:disabled) {
         <span class="meta">保存后立即生效并写入 config.json</span>
       </div>
     </section>
-<section id="section-silent" data-page="overview" class="card">
-      <h2>静默开关</h2>
-      <div class="row">
-        <button id="silentOn">开启静默</button>
-        <button id="silentOff">恢复正常</button>
-      </div>
-      <div class="meta">静默时群友消息不投递 agent，仅管理员可对话。</div>
-    </section>
-<section id="section-dsh" data-page="overview" class="card span-all">
-      <h2 data-note="下一条消息生效">DSH 模型与思考强度</h2>
-      <div class="meta">模型：<span id="dshModelText">-</span> ｜ 提供方：<span id="dshProviderText">-</span></div>
-      <div class="row" style="margin-top:10px">
-        <label style="flex:0 0 auto">思考强度</label>
-        <select id="dshEffortSelect" style="flex:0 1 220px"></select>
-        <button id="dshEffortSave">保存</button>
-        <span class="meta" id="dshEffortMsg"></span>
-      </div>
-      <div class="meta" id="dshEffortNote"></div>
-      <div class="meta" id="dshEffortSideEffect"></div>
-    </section>
+</section>
 <section id="section-security" data-page="access" class="card">
       <h2>安全拦截通知</h2>
       <div class="row">
@@ -2538,102 +2133,12 @@ button:active:not(:disabled) {
       </div>
       <div class="meta">由守护窗口启动时，重启后 5 秒自动恢复；清空工作区会归档全部 QQ 会话并清空活动日志。</div>
     </section>
-<section id="section-notify" data-page="operations" class="card span-all">
-      <h2>后台控制端引导</h2>
-      <div class="meta">直接向指定 QQ 会话的 DSH agent 投递一条“后台控制端提醒”，用于给 AI 引导/提醒；该消息不是群友消息。二代模式（reserved2）下会自动附带会话令牌和二代工具协议说明，AI 的文本输出不会自动转发，发言需通过发送工具。</div>
-      <div class="row" style="margin-top:10px">
-        <select id="aiNotifyKind" style="width:110px">
-          <option value="group">群</option>
-          <option value="private">私聊</option>
-        </select>
-        <input type="text" id="aiNotifyId" placeholder="群号 / QQ 号" style="width:180px">
-      </div>
-      <label>提醒内容（发给 DSH agent 的引导/提醒）</label>
-      <textarea id="aiNotifyMessage" placeholder="例如：接下来群里聊到某个话题时，你可以更主动一点；或：先潜水，等我叫你。"></textarea>
-      <div class="row" style="margin-top:8px">
-        <button id="aiNotifySend">发送到 DSH</button>
-        <span class="meta" id="aiNotifyMsg"></span>
-      </div>
-    </section>
-<section id="section-usage" data-page="usage" class="card span-all">
-      <h2 data-note="每 3 秒自动同步">令牌与花费</h2>
-      <div class="meta">数据来源是 DSH 会话事件里的 provider usage。<b>累计总量</b>取 <code>tokenUsage</code> 投影（整条会话日志的权威累计，含桥接启动前的历史）；<b>逐轮明细</b>由 <code>assistant/message</code> 的 usage 折叠而来，能追溯到多深取决于会话开场快照带回的历史条数。金额按 DeepSeek 官方价目表折算，区分高峰 / 空闲时段（高峰单价为空闲的 2 倍）。</div>
-      <div class="overview-summary" id="usageSummary">
-        <div class="metric"><span>总花费</span><strong id="metricUsageCost">—</strong><small id="metricUsageCostHint">读取中…</small></div>
-        <div class="metric"><span>累计 token</span><strong id="metricUsageTokens">—</strong><small id="metricUsageTokensHint">输入 / 输出</small></div>
-        <div class="metric"><span>缓存命中率</span><strong id="metricUsageHitRate">—</strong><small id="metricUsageHitHint">命中输入 ÷ 总输入</small></div>
-        <div class="metric"><span>平均每轮</span><strong id="metricUsagePerTurn">—</strong><small id="metricUsagePerTurnHint">按已归属回合</small></div>
-      </div>
-      <div class="row usage-controls">
-        <button id="usageRefresh" class="small">刷新</button>
-        <button id="usageClear" class="small danger">清空账本</button>
-        <span class="meta" id="usageMsg">读取中…</span>
-      </div>
-      <h3 class="usage-h3">消耗走势</h3>
-      <div class="row usage-chart-controls" id="usageChartControls">
-        <span class="meta">时间范围</span>
-        <button class="tag active" data-usage-hours="24">近 24 小时</button>
-        <button class="tag" data-usage-hours="72">近 3 天</button>
-        <button class="tag" data-usage-hours="168">近 7 天</button>
-        <button class="tag" data-usage-hours="720">近 30 天</button>
-        <span class="meta">纵轴</span>
-        <button class="tag active" data-usage-metric="cost">花费</button>
-        <button class="tag" data-usage-metric="tokens">token</button>
-      </div>
-      <div class="usage-chart-head">
-        <strong id="usageChartTotal">—</strong>
-        <span class="meta" id="usageChartHint">读取中…</span>
-      </div>
-      <div class="usage-chart" id="usageChart">加载中…</div>
-      <div class="usage-legend">
-        <span><i class="off"></i>空闲时段</span>
-        <span><i class="peak"></i>高峰时段（单价 ×2）</span>
-        <span><i class="mixed"></i>跨时段</span>
-      </div>
-      <div class="meta" id="usageChartNote" style="margin-top:6px"></div>
-      <h3 class="usage-h3">按会话（群 / 私聊）</h3>
-      <div class="tool-log-table" id="usageConversations">加载中…</div>
-      <h3 class="usage-h3">逐轮花费 <span class="meta" id="usageTurnScope">—</span></h3>
-      <div class="row usage-controls">
-        <label class="sr-only" for="usageKeySelect">选择要查看逐轮明细的会话</label>
-        <select id="usageKeySelect"></select>
-        <button id="usageTurnsLoad" class="small">加载逐轮明细</button>
-      </div>
-      <div class="tool-log-table" id="usageTurns">选择会话后加载逐轮明细…</div>
-      <details class="settings-group"><summary>最近调用流水（实时，最新 40 条）</summary><div class="settings-content">
-      <div class="tool-log-table" id="usageRecent">（空）</div>
-      </div></details>
-      <details class="settings-group"><summary>当前生效的价目表</summary><div class="settings-content">
-      <div id="usagePrices" class="meta">读取中…</div>
-      </div></details>
-    </section>
+</section>
       </div>
       <div class="overview-footnote" data-page="overview"><span id="accessSummary">正在读取访问范围…</span><button class="text-button" data-view="access">管理访问范围 →</button></div>
       <footer class="page-footer"><span>QQ Bridge · 连接日常，保持自主</span><span id="lastUpdated">等待首次同步</span></footer>
     </main>
   </div>
-      <div class="modal-overlay" id="slangModalOverlay">
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="slangModalTitle" tabindex="-1">
-        <h3 id="slangModalTitle">确认黑话</h3>
-        <div class="meta" id="slangModalContent" style="margin-bottom:6px"></div>
-        <label>含义 *</label>
-        <input type="text" id="slangModalMeaning" placeholder="必须填写，确认后才会注入 AI 上下文">
-        <label>用法（可选）</label>
-        <input type="text" id="slangModalUsage" placeholder="使用场景 / 语气">
-        <label>示例（可选）</label>
-        <input type="text" id="slangModalExample" placeholder="自然短句示例">
-        <label>风险/慎用说明（可选）</label>
-        <input type="text" id="slangModalRisk" placeholder="敏感 / 慎用风险">
-        <label>参考来源（可选，每行一个 URL）</label>
-        <textarea id="slangModalSources" rows="3" placeholder="https://..."></textarea>
-        <div class="row">
-          <button id="slangModalDirectConfirm" class="small">直接确认（转正）</button>
-          <button id="slangModalSendResearch" class="small">送 DSH 深度研究</button>
-          <button id="slangModalCancel" class="small">取消</button>
-        </div>
-      </div>
-    </div>
-
 
   <div class="toast" id="consoleToast" role="status" hidden></div>
   <noscript><div class="connection-alert">控制台需要启用 JavaScript 才能加载状态及保存设置。</div></noscript>
@@ -2726,256 +2231,9 @@ function renderSnowlumaHealth(sl) {
 async function refresh() {
   try {
     const s = await api('/api/status');
-    document.querySelectorAll('#modeRow button').forEach(b => (b.classList.toggle('active', b.dataset.mode === s.mode), b.setAttribute('aria-pressed', String(b.dataset.mode === s.mode))));
-    document.getElementById('roleText').textContent = s.role || '无';
-    document.getElementById('roleModeText').textContent = s.roleMode === 'silent' ? '静默' : '正常';
-    const modeLabel = s.mode === 'reserved' ? '一代仿真模式' : s.mode === 'reserved2' ? '二代仿真模式' : s.mode === 'closed-agent' ? '封闭 Agent' : '聊天模式';
-    updateOverview(s, modeLabel);
+    updateOverview(s);
     document.getElementById('activity').textContent = s.activity || '（空）';
-    const presetSel = document.getElementById('closedPreset');
-    if (presetSel && document.activeElement !== presetSel) presetSel.value = s.closedAgentPreset || '';
   } catch (e) { document.getElementById('statusText').textContent = '连接中断 · 请检查桥接服务'; setConnectionError(e); }
-}
-
-async function refreshPresets() {
-  try {
-    const r = await api('/api/presets');
-    const sel = document.getElementById('closedPreset');
-    sel.innerHTML = '';
-    // 空值 = 使用 DSH 自己声明的默认 preset（closed-agent 的推荐选择）
-    const defOpt = document.createElement('option');
-    defOpt.value = '';
-    defOpt.textContent = '（DSH 默认 preset）';
-    sel.appendChild(defOpt);
-    for (const p of r.presets) {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      opt.textContent = p.id + (p.trust === 'user' ? '（用户）' : '');
-      sel.appendChild(opt);
-    }
-    refresh();
-  } catch {}
-}
-
-async function saveMode(mode) {
-  // 不再硬编码 'router-standard'（DSH 0.1.5 已无此 preset）；
-  // 留空表示让桥接使用 DSH 自己声明的默认 preset。
-  const preset = document.getElementById('closedPreset').value || '';
-  const r = await api('/api/mode', 'POST', { mode, closedAgentPreset: preset });
-  if (r.ok) {
-    refresh();
-    // 桥接会把模式写穿到 DSH 设置；写穿失败时本地值会在下一次 5 秒轮询被覆盖回滚。
-    // 不提示的话用户只会看到「刚切过去又自己变回来了」，无从判断原因。
-    if (r.dshSynced === false) {
-      alert('模式已写入本地，但未能同步到 DSH 设置（DSH 未运行？）——\n下一次轮询（约 5 秒）会把模式改回去。请检查 DSH 与桥接日志。');
-    }
-  } else {
-    alert(r.error || '切换失败');
-  }
-  return r;
-}
-
-// ── 人格管理 ────────────────────────────────────────────────────────────────
-// 人格提示词 = roles/<名称>.md，桥接每条消息注入，保存即生效。
-let roleEditorState = { mode: 'new', name: '' };
-let roleCache = [];
-let roleInjectMax = 6000;
-
-function setRoleMsg(text, ok) {
-  const el = document.getElementById('roleCreateMsg');
-  el.textContent = text;
-  el.className = ok === undefined ? 'meta' : (ok ? 'meta ok' : 'meta err');
-}
-
-function renderRoleEditor() {
-  const editing = roleEditorState.mode === 'edit';
-  document.getElementById('roleEditorMeta').textContent = editing
-    ? `正在编辑「${roleEditorState.name}」：改完点「保存修改」；改名字会同时重命名文件。`
-    : '当前是「新建」模式：填好名称与内容后点「新建人格」；名称与已有的人格同名则会改为保存修改。';
-  document.getElementById('roleCreate').textContent = editing ? '保存修改' : '新建人格';
-}
-
-function roleEditorWarnings(text) {
-  const value = String(text ?? '');
-  const warns = [];
-  if (value.length > roleInjectMax) warns.push(`超出注入上限：当前 ${value.length} 字符，只有前 ${roleInjectMax} 字符会进入提示词（多余 ${value.length - roleInjectMax} 字符不会生效）`);
-  if (/\[SILENT\]|空格分隔|按空格|用空格|空格分句|空格代表|自动转发|回复会自动|输出\s*\[SILENT\]/i.test(value)) {
-    warns.push('含一代仿真专用指令（[SILENT] / 空格分句 / 自动转发），二代仿真下这些行会被自动过滤');
-  }
-  return warns;
-}
-
-function updateRoleEditorWarnings() {
-  const warns = roleEditorWarnings(document.getElementById('newRoleContent').value);
-  document.getElementById('roleEditorWarnings').textContent = warns.length ? '⚠️ ' + warns.join('；') : '';
-}
-
-async function openRoleForEdit(name) {
-  setRoleMsg('读取中…');
-  const res = await api('/api/roles/content?name=' + encodeURIComponent(name));
-  if (!res.ok) { setRoleMsg(res.error || '读取失败', false); return; }
-  document.getElementById('newRoleName').value = name;
-  document.getElementById('newRoleContent').value = res.content;
-  roleEditorState = { mode: 'edit', name };
-  renderRoleEditor();
-  updateRoleEditorWarnings();
-  setRoleMsg(`已载入「${name}」（${res.chars} 字符）`, true);
-}
-
-function resetRoleForm() {
-  document.getElementById('newRoleName').value = '';
-  document.getElementById('newRoleContent').value = '';
-  roleEditorState = { mode: 'new', name: '' };
-  renderRoleEditor();
-  updateRoleEditorWarnings();
-  setRoleMsg('');
-}
-
-async function refreshRoles() {
-  try {
-    const r = await api('/api/roles');
-    if (r.limits?.injectMaxChars) {
-      roleInjectMax = Number(r.limits.injectMaxChars) || roleInjectMax;
-      const input = document.getElementById('roleInjectMax');
-      if (input && document.activeElement !== input) input.value = String(roleInjectMax);
-    }
-    const names = Array.isArray(r.roles) ? r.roles : [];
-    roleCache = Array.isArray(r.summaries) && r.summaries.length === names.length
-      ? r.summaries
-      : names.map((name) => ({ name, chars: 0, bytes: 0, excerpt: '', truncated: false }));
-    const box = document.getElementById('roleList');
-    box.replaceChildren();
-    if (!roleCache.length) {
-      const empty = document.createElement('div');
-      empty.className = 'empty-state';
-      empty.innerHTML = '<strong>还没有人格</strong><p>在「编辑人格提示词」里填名称与内容，点「新建人格」创建第一个。</p>';
-      box.appendChild(empty);
-    }
-    for (const role of roleCache) {
-      const item = document.createElement('button');
-      item.type = 'button';
-      item.className = 'persona-item' + (role.name === r.current ? ' active' : '');
-      item.setAttribute('aria-pressed', String(role.name === r.current));
-      const head = document.createElement('span');
-      head.className = 'persona-item-head';
-      const title = document.createElement('strong');
-      title.textContent = role.name;
-      head.appendChild(title);
-      if (role.name === r.current) {
-        const badge = document.createElement('span');
-        badge.className = 'persona-badge';
-        badge.textContent = '启用中';
-        head.appendChild(badge);
-      }
-      if (role.truncated) {
-        const badge = document.createElement('span');
-        badge.className = 'persona-badge warn';
-        badge.textContent = `超出上限`;
-        badge.title = `按模式筛选后仍有超出：二代 ${role.charsV2} 字符 / 一代 ${role.charsV1} 字符，上限 ${roleInjectMax}`;
-        head.appendChild(badge);
-      }
-      if (role.hasModeTags) {
-        const badge = document.createElement('span');
-        badge.className = 'persona-badge';
-        badge.textContent = '分代内容';
-        badge.title = '该人格含 〔一代〕/〔二代〕 专属小节，只在对应仿真模式下注入';
-        head.appendChild(badge);
-      }
-      const meta = document.createElement('small');
-      const split = Number.isFinite(role.charsV1) && role.charsV1 !== role.charsV2;
-      const injection = split
-        ? `按模式注入：二代 ${role.injectedV2} / 一代 ${role.injectedV1} 字符`
-        : `注入 ${role.injectedV2 ?? role.chars} 字符`;
-      meta.textContent = `共 ${role.chars} 字符 · ${injection}${role.excerpt ? ' · ' + role.excerpt : ''}`;
-      item.append(head, meta);
-      item.addEventListener('click', () => openRoleForEdit(role.name));
-      box.appendChild(item);
-    }
-    const hint = document.getElementById('roleListHint');
-    if (hint) hint.textContent = roleCache.length ? `共 ${roleCache.length} 个 · 点任意一个载入编辑` : '';
-    renderRoleEditor();
-  } catch (error) {
-    document.getElementById('roleList').textContent = '加载失败：' + (error?.message ?? error);
-  }
-}
-
-// ── 仿真提示词（预设内置，需重启 DSH 生效）──────────────────────────────────
-let simPromptOriginal = '';
-let simPromptPreset = 'qq-chat-v2';
-
-function setSimMsg(text, ok) {
-  const el = document.getElementById('simPromptMsg');
-  el.textContent = text;
-  el.className = ok === undefined ? 'meta' : (ok ? 'meta ok' : 'meta err');
-}
-
-function setSimEditing(editing) {
-  const area = document.getElementById('simPromptText');
-  area.readOnly = !editing;
-  area.classList.toggle('editing', editing);
-  document.getElementById('simPromptEdit').disabled = editing;
-  document.getElementById('simPromptSave').disabled = !editing;
-  document.getElementById('simPromptCancel').disabled = !editing;
-}
-
-async function refreshSimPrompt() {
-  simPromptPreset = document.getElementById('simPromptPreset').value || 'qq-chat-v2';
-  setSimMsg('读取中…');
-  try {
-    const r = await api('/api/preset/sim-prompt?preset=' + encodeURIComponent(simPromptPreset));
-    const area = document.getElementById('simPromptText');
-    if (!r.ok) {
-      area.value = '';
-      setSimMsg(r.error || '读取失败', false);
-      document.getElementById('simPromptStatus').textContent = '不可用';
-      return;
-    }
-    simPromptOriginal = r.content;
-    area.value = r.content;
-    setSimEditing(false);
-    setSimMsg('');
-    const status = r.status || {};
-    document.getElementById('simPromptStatus').textContent =
-      `${status.label || simPromptPreset} · ${r.chars} 字符${status.installed ? ' · 已同步到 DSH' : ' · 尚未同步到 DSH'}`;
-    document.getElementById('simPromptWarnings').textContent = (r.warnings || []).length
-      ? '⚠️ ' + r.warnings.join('；') : '';
-    document.getElementById('simPromptRestart').textContent =
-      '改动写入该代预设的源文件并同步到 DSH 的 preset 目录；preset 由 DSH 在会话创建时装配，因此新会话会自动用新版，正在进行的 QQ 会话需重置该会话或重启 DSH。';
-  } catch (error) {
-    setSimMsg('读取失败：' + (error?.message ?? error), false);
-  }
-}
-
-// ── DSH 模型与思考强度 ──────────────────────────────────────────────────────
-async function refreshDshModel() {
-  try {
-    const r = await api('/api/dsh/model');
-    document.getElementById('dshModelText').textContent = r.model || '-';
-    document.getElementById('dshProviderText').textContent = r.provider || '-';
-    const select = document.getElementById('dshEffortSelect');
-    const labels = r.labels || {};
-    select.replaceChildren();
-    for (const option of (r.options || [])) {
-      const el = document.createElement('option');
-      el.value = option;
-      const info = labels[option] || {};
-      const isDefault = option === (r.providerDefault || r.default);
-      el.textContent = `${option}${isDefault ? '（默认）' : ''}`;
-      if (info.description) el.title = info.description;
-      select.appendChild(el);
-    }
-    select.value = r.reasoningEffort;
-    const parts = [];
-    if (r.providerDefault) parts.push(`DSH 出厂默认是 ${r.providerDefault}`);
-    parts.push(r.catalogSource === 'dsh' ? '档位取自 DSH 实际公布的能力' : '未能读取 DSH 能力，档位为内置清单');
-    document.getElementById('dshEffortNote').textContent = parts.join('；') + '。';
-    document.getElementById('dshEffortSideEffect').textContent = r.globalSideEffect
-      ? '注意：切换会同时写入 DSH 的全局默认（~/.dsh/settings.yaml 的 agent-default-model），也就是 Web GUI 里新建会话的默认强度也会跟着变。'
-      : '';
-    document.getElementById('dshEffortMsg').textContent = '';
-  } catch (error) {
-    document.getElementById('dshEffortMsg').textContent = '读取失败：' + (error?.message ?? error);
-  }
 }
 
 async function refreshWhitelist() {
@@ -2989,171 +2247,6 @@ async function refreshWhitelist() {
   } catch {}
 }
 
-async function refreshSessions() {
-  try {
-    const s = await api('/api/sessions');
-    const box = document.getElementById('sessionList');
-    document.getElementById('metricSessions').textContent = s.sessions.length;
-    if (!s.sessions.length) { box.innerHTML = '<div class="empty-state"><strong>还没有会话</strong><p>白名单中的群或好友发来消息后，会话会显示在这里。</p></div>'; return; }
-    let html = '<table><tr><th>QQ 会话</th><th>DSH 会话 ID</th><th>类型</th><th></th></tr>';
-    for (const x of s.sessions) {
-      const isP = x.key.startsWith('private:');
-      const type = isP ? '<span class="pill b">私聊</span>' : '<span class="pill g">群</span>';
-      const ownerTag = x.owner ? ' <span class="pill r">管理员</span>' : '';
-      html += `<tr><td>${esc(x.key)}${ownerTag}</td><td><code>${esc(x.sessionId)}</code></td><td>${type}</td><td><button class="small" data-reset-key="${esc(x.key)}">清除上下文</button></td></tr>`;
-    }
-    box.innerHTML = html + '</table>';
-    box.querySelectorAll('[data-reset-key]').forEach(btn => btn.addEventListener('click', async () => {
-      if (!confirm('确定清除该会话的上下文？下次消息将开新会话。')) return;
-      const r = await api('/api/session/reset', 'POST', { key: btn.dataset.resetKey });
-      alert(r.ok ? '✅ 已清除上下文' : ('❌ ' + (r.error || '失败')));
-      refreshSessions();
-    }));
-  } catch {}
-}
-
-async function refreshPending() {
-  try {
-    const p = await api('/api/pending');
-    const box = document.getElementById('pendingList');
-    document.getElementById('metricPending').textContent = p.pending.length;
-    document.getElementById('pendingCount').textContent = p.pending.length;
-    if (!p.pending.length) { box.innerHTML = '<div class="empty-state"><strong>暂时没有待处理请求</strong><p>AI 的提问或工具审批会出现在这里，请前往对应 QQ 会话回复。</p></div>'; return; }
-    let html = '<table><tr><th>会话</th><th>类型</th><th>详情</th></tr>';
-    for (const x of p.pending) {
-      const kind = x.kind === 'approval' ? '<span class="pill r">审批</span>' : '<span class="pill b">提问</span>';
-      let detail = '';
-      if (x.kind === 'approval') detail = `${esc(x.toolName)}${x.reason ? '：' + esc(x.reason) : ''}`;
-      else if (x.questions) detail = x.questions.map(q => esc(q.question)).join(' / ');
-      html += `<tr><td>${esc(x.key)}</td><td>${kind}</td><td>${detail}</td></tr>`;
-    }
-    box.innerHTML = html + '</table>';
-  } catch {}
-}
-
-document.querySelectorAll('#modeRow button').forEach(b => b.addEventListener('click', async () => {
-  if (b.disabled) return;
-  await saveMode(b.dataset.mode);
-}));
-document.getElementById('closedPreset').addEventListener('change', async () => {
-  // 切换预设立即保存（若当前是 closed-agent 则即时生效，否则供下次切换使用）
-  const active = document.querySelector('#modeRow button.active');
-  const mode = active ? active.dataset.mode : 'chat';
-  await saveMode(mode);
-});
-document.getElementById('roleSet').addEventListener('click', async () => {
-  const r = await api('/api/role', 'POST', { role: document.getElementById('roleInput').value.trim() });
-  if (r.ok) refreshRoles(); else alert(r.error || '设置失败');
-});
-document.getElementById('roleClear').addEventListener('click', async () => { await api('/api/role', 'POST', { role: null }); refreshRoles(); refresh(); });
-document.getElementById('roleCreate').addEventListener('click', async () => {
-  const name = document.getElementById('newRoleName').value.trim();
-  const content = document.getElementById('newRoleContent').value.trim();
-  if (!name) { setRoleMsg('请先填人格名', false); return; }
-  const editing = roleEditorState.mode === 'edit';
-  const exists = roleCache.some((role) => role.name === name);
-  // 编辑模式下改了名字 → 先重命名文件，再保存内容
-  if (editing && roleEditorState.name !== name) {
-    const renamed = await api('/api/roles/rename', 'POST', { from: roleEditorState.name, to: name });
-    if (!renamed.ok) { setRoleMsg('❌ ' + (renamed.error || '重命名失败'), false); return; }
-  }
-  const endpoint = editing || exists ? '/api/roles/update' : '/api/roles/create';
-  const r = await api(endpoint, 'POST', { name, content });
-  setRoleMsg(r.ok ? `✅ 已保存「${name}」` : ('❌ ' + (r.error || '失败')), r.ok);
-  if (r.ok) {
-    roleEditorState = { mode: 'edit', name };
-    document.getElementById('roleEditorWarnings').textContent = (r.warnings || []).length ? '⚠️ ' + r.warnings.join('；') : '';
-    await refreshRoles();
-  }
-});
-document.getElementById('roleDuplicate').addEventListener('click', async () => {
-  const source = document.getElementById('newRoleName').value.trim();
-  const content = document.getElementById('newRoleContent').value.trim();
-  const target = (prompt('把当前内容另存为新的人格，名称：', source ? source + '-副本' : '') || '').trim();
-  if (!target) return;
-  const r = await api('/api/roles/create', 'POST', { name: target, content });
-  if (!r.ok) { setRoleMsg('❌ ' + (r.error || '另存失败'), false); return; }
-  document.getElementById('newRoleName').value = target;
-  roleEditorState = { mode: 'edit', name: target };
-  renderRoleEditor();
-  setRoleMsg(`✅ 已另存为「${target}」`, true);
-  refreshRoles();
-});
-document.getElementById('roleDelete').addEventListener('click', async () => {
-  const name = document.getElementById('newRoleName').value.trim();
-  if (!name) { setRoleMsg('请先选择或填写要删除的人格名', false); return; }
-  if (!confirm(`确定删除人格「${name}」？该操作不可撤销（roles/${name}.md）。`)) return;
-  const r = await api('/api/roles/delete', 'POST', { name });
-  if (!r.ok) { setRoleMsg('❌ ' + (r.error || '删除失败'), false); return; }
-  resetRoleForm();
-  setRoleMsg(r.clearedCurrent ? `已删除「${name}」，并清除了当前启用的人格` : `已删除「${name}」`, true);
-  refreshRoles();
-  refresh();
-});
-document.getElementById('roleFormReset').addEventListener('click', () => resetRoleForm());
-document.getElementById('newRoleContent').addEventListener('input', updateRoleEditorWarnings);
-
-// ── 仿真提示词 ──────────────────────────────────────────────────────────────
-document.getElementById('simPromptEdit').addEventListener('click', () => {
-  setSimEditing(true);
-  setSimMsg('编辑中：改完点「保存并同步到 DSH」。保存会先备份，并做 YAML 与安全不变量校验。');
-});
-document.getElementById('simPromptCancel').addEventListener('click', () => {
-  document.getElementById('simPromptText').value = simPromptOriginal;
-  setSimEditing(false);
-  setSimMsg('已放弃修改');
-});
-document.getElementById('simPromptPreset').addEventListener('change', () => { refreshSimPrompt(); });
-document.getElementById('simPromptSave').addEventListener('click', async () => {
-  const content = document.getElementById('simPromptText').value;
-  if (!confirm('保存会改写该代预设的源文件并同步到 DSH 的 preset 目录（新会话生效，进行中的会话需重置或重启 DSH）。确定继续？')) return;
-  setSimMsg('保存中…');
-  const r = await api('/api/preset/sim-prompt', 'POST', { preset: simPromptPreset, content });
-  if (!r.ok) { setSimMsg('❌ ' + (r.error || '保存失败'), false); return; }
-  if (r.unchanged) {
-    simPromptOriginal = content;
-    setSimEditing(false);
-    setSimMsg('内容没有变化，未写入文件（避免无谓地重排预设格式）', true);
-    return;
-  }
-  simPromptOriginal = content;
-  setSimEditing(false);
-  setSimMsg(`✅ 已保存${r.synced ? '并同步到 DSH' : ''}；重启 DSH 后生效`, true);
-  document.getElementById('simPromptWarnings').textContent = (r.warnings || []).length ? '⚠️ ' + r.warnings.join('；') : '';
-  document.getElementById('simPromptStatus').textContent = `${r.status?.label || simPromptPreset} · ${content.length} 字符 · 已保存，待重启 DSH`;
-});
-document.getElementById('simPromptRestore').addEventListener('click', async () => {
-  if (!confirm('还原到该代预设上一次保存前的备份？当前改动会丢失（原文件会先自动备份）。')) return;
-  const r = await api('/api/preset/sim-prompt/restore', 'POST', { preset: simPromptPreset });
-  if (!r.ok) { setSimMsg('❌ ' + (r.error || '还原失败'), false); return; }
-  setSimMsg(`✅ 已还原（${r.restoredFrom}）；重启 DSH 后生效`, true);
-  refreshSimPrompt();
-});
-
-// ── 人格注入上限 ────────────────────────────────────────────────────────────
-document.getElementById('roleInjectMaxSave').addEventListener('click', async () => {
-  const msg = document.getElementById('roleInjectMaxMsg');
-  const value = Number(document.getElementById('roleInjectMax').value);
-  if (!Number.isFinite(value) || value < 1000 || value > 20000) { msg.textContent = '请输入 1000~20000 之间的整数'; msg.className = 'meta err'; return; }
-  const r = await api('/api/roles/limit', 'POST', { maxInjectChars: value });
-  msg.textContent = r.ok ? `✅ 已设为 ${r.maxInjectChars} 字符，下一条消息生效` : ('❌ ' + (r.error || '保存失败'));
-  msg.className = r.ok ? 'meta ok' : 'meta err';
-  if (r.ok) refreshRoles();
-});
-
-// ── DSH 思考强度 ────────────────────────────────────────────────────────────
-document.getElementById('dshEffortSave').addEventListener('click', async () => {
-  const effort = document.getElementById('dshEffortSelect').value;
-  const msg = document.getElementById('dshEffortMsg');
-  msg.textContent = '保存中…';
-  msg.className = 'meta';
-  const r = await api('/api/dsh/effort', 'POST', { reasoningEffort: effort });
-  msg.textContent = r.ok ? `✅ 已设为 ${r.reasoningEffort}，下一条消息生效` : ('❌ ' + (r.error || '保存失败'));
-  msg.className = r.ok ? 'meta ok' : 'meta err';
-  if (r.ok) refreshDshModel();
-});
-document.getElementById('silentOn').addEventListener('click', async () => { await api('/api/role-mode', 'POST', { mode: 'silent' }); refresh(); });
-document.getElementById('silentOff').addEventListener('click', async () => { await api('/api/role-mode', 'POST', { mode: 'active' }); refresh(); });
 document.getElementById('wlSave').addEventListener('click', async () => {
   const parse = (s) => s.split(/[,，\s]+/).map(x => x.trim()).filter(Boolean).map(Number).filter(Number.isFinite);
   const r = await api('/api/whitelist', 'POST', {
@@ -3183,17 +2276,6 @@ document.getElementById('clearWsBtn').addEventListener('click', async () => {
   const r = await api('/api/workspace/reset', 'POST', {});
   document.getElementById('clearWsMsg').textContent = r.ok ? (`✅ 已归档 ${r.archivedCount} 个会话，工作区已清空`) : ('❌ ' + (r.error || '失败'));
   document.getElementById('clearWsMsg').className = r.ok ? 'meta ok' : 'meta err';
-  refreshSessions(); refresh();
-});
-document.getElementById('aiNotifySend').addEventListener('click', async () => {
-  const kind = document.getElementById('aiNotifyKind').value;
-  const id = document.getElementById('aiNotifyId').value.trim();
-  const message = document.getElementById('aiNotifyMessage').value.trim();
-  if (!id || !message) { alert('请填写群号/QQ 号和提醒内容'); return; }
-  const r = await api('/api/console/notify-ai', 'POST', { key: kind + ':' + id, message });
-  const msg = document.getElementById('aiNotifyMsg');
-  msg.textContent = r.ok ? ('✅ 已投递到 DSH：' + r.sessionId) : ('❌ ' + (r.error || '失败'));
-  msg.className = r.ok ? 'meta ok' : 'meta err';
 });
 
 // ── 语音库与语音发送（调试面板） ───────────────────────────────────────────
@@ -3268,7 +2350,6 @@ async function loadV2Config() {
     const r = await api('/api/socialV2/config');
     const c = r.config || {};
     document.getElementById('v2Enabled').checked = c.enabled !== false;
-    document.getElementById('v2AgentPreset').value = c.agentPreset || '';
     document.getElementById('v2ProvideRecommendations').checked = c.provideRecommendations !== false;
     document.querySelectorAll('[data-v2-tool]').forEach(el => {
       el.checked = (c.tools && c.tools[el.dataset.v2Tool] !== false);
@@ -3348,7 +2429,6 @@ async function saveV2Config() {
   document.querySelectorAll('[data-v2-tool]').forEach(el => { tools[el.dataset.v2Tool] = el.checked; });
   const body = {
     enabled: document.getElementById('v2Enabled').checked,
-    agentPreset: document.getElementById('v2AgentPreset').value.trim(),
     provideRecommendations: document.getElementById('v2ProvideRecommendations').checked,
     autoReplyCheckMs: Math.round(Number(document.getElementById('v2AutoReplyCheckSec').value) || 30) * 1000,
     tools,
@@ -3459,8 +2539,19 @@ function summarizeToolArgs(tool, args) {
     if (v === undefined || v === null || v === '') return;
     parts.push(`${k}=${v}`);
   };
-  const t = String(tool || '');
-  if (t.includes('qq_set_wake_config')) {
+  // 日志里的工具名可能带 MCP 前缀（mcp__<server>__chat_qq_<action>），旧日志里还留着 qq_* /
+  // chat_* 别名。先剥前缀得到动作名，再把旧别名的后缀收敛到清单 type，避免改名后这里静默失配。
+  const LEGACY_ACTIONS = {
+    wait_for_messages: 'wait',
+    send_poke: 'poke',
+    set_wake_config: 'set_wake',
+    get_unread_messages: 'get_unread',
+    get_recent_messages: 'get_recent',
+    get_my_recent_messages: 'get_my_recent',
+  };
+  const raw = String(tool || '').replace(/^mcp__.*?__/, '').replace(/^(?:chat_|qq_)+/, '');
+  const t = LEGACY_ACTIONS[raw] || raw;
+  if (t === 'set_wake') {
     const cfg = (obj.config && typeof obj.config === 'object') ? obj.config : obj;
     push('mode', cfg.mode);
     push('infinite', cfg.infinite);
@@ -3480,11 +2571,11 @@ function summarizeToolArgs(tool, args) {
     if (tr.anyMessage) trigs.push('anyMessage');
     if (Number(tr.probability) > 0) trigs.push('概率:' + tr.probability);
     if (trigs.length) push('triggers', trigs.join('|'));
-  } else if (t.includes('qq_wait_for_messages')) {
+  } else if (t === 'wait') {
     push('timeoutMs', obj.timeoutMs != null ? obj.timeoutMs : '默认30000');
     push('minNewMessages', obj.minNewMessages != null ? obj.minNewMessages : 1);
     push('quietMs', obj.quietMs != null ? obj.quietMs : '默认8000');
-  } else if (t.includes('qq_send_message')) {
+  } else if (t === 'send_message') {
     const msgs = Array.isArray(obj.messages) ? obj.messages : (obj.messages != null ? [obj.messages] : []);
     push('条数', msgs.length);
     if (msgs.length) push('首条', String(msgs[0]).slice(0, 30));
@@ -3492,19 +2583,19 @@ function summarizeToolArgs(tool, args) {
     if (obj.gapMs != null) push('gapMs', obj.gapMs);
     if (Array.isArray(obj.gaps) && obj.gaps.length) push('gaps', obj.gaps.join(','));
     if (obj.replyToMessageId != null && obj.replyToMessageId !== '') push('引用id', obj.replyToMessageId);
-  } else if (t.includes('qq_send_burst')) {
+  } else if (t === 'send_burst') {
     const msgs = Array.isArray(obj.messages) ? obj.messages : [];
     push('条数', msgs.length);
     if (msgs.length) push('首条', String(msgs[0]).slice(0, 30));
-  } else if (t.includes('qq_send_poke')) {
+  } else if (t === 'poke') {
     push('key', obj.key);
     if (obj.targetUserId != null && obj.targetUserId !== '') push('target', obj.targetUserId);
-  } else if (t.includes('qq_get_forward_msg')) {
+  } else if (t === 'get_forward_msg') {
     push('key', obj.key);
     if (obj.id != null && obj.id !== '') push('id', String(obj.id).slice(0, 40));
-  } else if (t.includes('qq_mark_read')) {
+  } else if (t === 'mark_read') {
     push('key', obj.key);
-  } else if (t.includes('qq_get_prompt') || t.includes('qq_get_unread_messages') || t.includes('qq_get_recent_messages') || t.includes('qq_social_state') || t.includes('qq_get_my_recent_messages') || t.includes('qq_get_message_detail') || t.includes('qq_get_active_members')) {
+  } else if (['get_prompt', 'get_unread', 'get_recent', 'social_state', 'get_my_recent', 'get_message_detail', 'get_active_members'].includes(t)) {
     push('key', obj.key);
     if (obj.messageId != null) push('messageId', obj.messageId);
     if (obj.limit != null) push('limit', obj.limit);
@@ -3556,102 +2647,6 @@ document.getElementById('v2ToolLogOutput').addEventListener('click', (ev) => {
   }
 });
 
-function renderV2Memory(data) {
-  const box = document.getElementById('v2MemoryOutput');
-  if (!data || !data.ok) {
-    box.innerHTML = '<span class="meta">加载失败</span>';
-    return;
-  }
-  const raw = data.raw || {};
-  const topics = Array.isArray(raw.activeTopics) ? raw.activeTopics : [];
-  const thoughts = Array.isArray(raw.pendingThoughts) ? raw.pendingThoughts : [];
-  const impressions = raw.memberImpressions && typeof raw.memberImpressions === 'object' ? raw.memberImpressions : {};
-  let html = '<div style="padding:8px">';
-  html += '<div class="memory-section"><b>进行中的话题</b> <button class="small" data-action="clear" data-cat="activeTopic">清空</button>';
-  if (!topics.length) html += '<div class="meta">（空）</div>';
-  for (const t of topics) {
-    const text = esc(String(t?.text || ''));
-    const extra = t?.pendingQuestion ? `；待追问：${esc(String(t.pendingQuestion))}` : '';
-    html += `<div style="margin:4px 0">📌 ${text}${extra} <button class="small" data-action="edit" data-cat="activeTopic" data-content="${esc(String(t?.text || ''))}">编辑</button> <button class="small" data-action="remove" data-cat="activeTopic" data-content="${esc(String(t?.text || ''))}">删除</button></div>`;
-  }
-  html += '</div>';
-  html += '<div class="memory-section"><b>你想说但还没说的</b> <button class="small" data-action="clear" data-cat="pendingThought">清空</button>';
-  if (!thoughts.length) html += '<div class="meta">（空）</div>';
-  for (const t of thoughts) {
-    html += `<div style="margin:4px 0">💭 ${esc(String(t?.text || ''))}${t?.motivation ? `（${esc(String(t.motivation))}）` : ''} <button class="small" data-action="edit" data-cat="pendingThought" data-content="${esc(String(t?.text || ''))}">编辑</button> <button class="small" data-action="remove" data-cat="pendingThought" data-content="${esc(String(t?.text || ''))}">删除</button></div>`;
-  }
-  html += '</div>';
-  html += '<div class="memory-section"><b>对群友的印象</b> <button class="small" data-action="clear" data-cat="memberImpression">清空</button>';
-  const names = Object.keys(impressions);
-  if (!names.length) html += '<div class="meta">（空）</div>';
-  for (const name of names) {
-    const im = impressions[name] || {};
-    const traits = Array.isArray(im.traits) ? im.traits : [];
-    html += `<div style="margin:4px 0">👤 ${esc(name)}：${traits.length ? esc(traits.join('、')) : '暂无记录'}（互动 ${Number(im.interactionCount) || 0} 次） <button class="small" data-action="edit" data-cat="memberImpression" data-target="${esc(name)}" data-traits="${esc(traits.join(', '))}">编辑</button> <button class="small" data-action="remove" data-cat="memberImpression" data-target="${esc(name)}">删除</button></div>`;
-  }
-  html += '</div></div>';
-  box.innerHTML = html;
-}
-function loadV2Memory() {
-  const key = document.getElementById('v2MemoryKey').value.trim();
-  const msg = document.getElementById('v2MemoryMsg');
-  if (!key) { msg.textContent = '请输入会话 key'; msg.className = 'meta err'; return; }
-  msg.textContent = '加载中…';
-  msg.className = 'meta';
-  return api('/api/socialV2/memory?key=' + encodeURIComponent(key))
-    .then(r => {
-      renderV2Memory(r);
-      msg.textContent = r.ok ? '✅ 已加载' : ('❌ ' + (r.error || '失败'));
-      msg.className = r.ok ? 'meta ok' : 'meta err';
-    })
-    .catch(e => {
-      msg.textContent = '❌ ' + (e.message || e);
-      msg.className = 'meta err';
-    });
-}
-document.getElementById('v2MemoryLoad').addEventListener('click', loadV2Memory);
-document.getElementById('v2MemoryClearAll').addEventListener('click', async () => {
-  const key = document.getElementById('v2MemoryKey').value.trim();
-  const msg = document.getElementById('v2MemoryMsg');
-  if (!key) { msg.textContent = '请输入会话 key'; msg.className = 'meta err'; return; }
-  if (!confirm('确定清空该会话全部轻量记忆？')) return;
-  const r = await api('/api/socialV2/memory-clear', 'POST', { key, category: '' });
-  msg.textContent = r.ok ? '✅ 已清空全部记忆' : ('❌ ' + (r.error || '失败'));
-  msg.className = r.ok ? 'meta ok' : 'meta err';
-  if (r.ok) loadV2Memory();
-});
-document.getElementById('v2MemoryOutput').addEventListener('click', async (ev) => {
-  const btn = ev.target.closest('button[data-action]');
-  if (!btn) return;
-  const key = document.getElementById('v2MemoryKey').value.trim();
-  const msg = document.getElementById('v2MemoryMsg');
-  if (!key) { msg.textContent = '请输入会话 key'; msg.className = 'meta err'; return; }
-  const cat = btn.dataset.cat;
-  const action = btn.dataset.action;
-  let r;
-  if (action === 'clear') {
-    r = await api('/api/socialV2/memory-clear', 'POST', { key, category: cat });
-  } else if (action === 'edit') {
-    let newContent;
-    let newExtra = {};
-    if (cat === 'memberImpression') {
-      const input = prompt(`编辑对 ${btn.dataset.target} 的印象特质（逗号分隔）：`, btn.dataset.traits || '');
-      if (input === null) return;
-      newContent = input;
-    } else {
-      const input = prompt(`编辑${cat === 'activeTopic' ? '话题' : '想法'}内容：`, btn.dataset.content || '');
-      if (input === null) return;
-      newContent = input;
-    }
-    r = await api('/api/socialV2/memory-update', 'POST', { key, category: cat, oldContent: btn.dataset.content || '', target: btn.dataset.target || '', newContent, newExtra });
-  } else {
-    r = await api('/api/socialV2/memory-remove', 'POST', { key, category: cat, content: btn.dataset.content || '', target: btn.dataset.target || '' });
-  }
-  msg.textContent = r.ok ? '✅ 已更新' : ('❌ ' + (r.error || '失败'));
-  msg.className = r.ok ? 'meta ok' : 'meta err';
-  if (r.ok) loadV2Memory();
-});
-
 function formatWakeStatus(r) {
   if (!r || !r.ok) return '<span class="meta">加载失败</span>';
   const wc = r.wakeConfig || {};
@@ -3698,7 +2693,10 @@ function formatWakeStatus(r) {
     const ago = Math.max(0, Math.round((Date.now() - r.lastAiReplyAt) / 60000));
     lines.push(`<div><b>上次发言：</b>${ago} 分钟前</div>`);
   }
-  lines.push(`<div><b>未读：</b>${Number(r.unreadCount) || 0} 条</div>`);
+  // P4：GATEWAY_STATE=on 时未读数/水位来自网关 mailbox 快照（不可达则回退本地），
+  // 在界面上标出来，运维不用翻日志就能判断 overlay 是否真的生效。
+  const stateSource = r.gatewayState === true ? '（网关快照）' : (r.gatewayState === false ? '（本地）' : '');
+  lines.push(`<div><b>未读：</b>${Number(r.unreadCount) || 0} 条${stateSource}</div>`);
   return '<div style="padding:8px">' + lines.join('') + '</div>';
 }
 function loadV2WakeStatus() {
@@ -3833,7 +2831,6 @@ document.getElementById('v2SessionSelect').addEventListener('change', (ev) => {
   const key = ev.target.value;
   if (!key) return;
   document.getElementById('v2StateKey').value = key;
-  document.getElementById('v2MemoryKey').value = key;
   document.getElementById('v2WakeKey').value = key;
   document.getElementById('v2InitPromptKey').value = key;
 });
@@ -3907,465 +2904,6 @@ document.getElementById('v2ToolLogClear').addEventListener('click', async () => 
   renderV2ToolLog([]);
 });
 
-// 只在页面加载/保存成功后填充输入框（避免自动刷新覆盖用户正在编辑的值）
-async function loadSocialForm() {
-  try {
-    const s = await api('/api/social');
-    const c = s.config;
-    document.getElementById('sTrigger').value = c.triggerProbability;
-    document.getElementById('sCheckMin').value = Math.round((c.activeCheckMinMs || 0) / 1000);
-    document.getElementById('sCheckMax').value = Math.round((c.activeCheckMaxMs || 0) / 1000);
-    document.getElementById('sActiveDelayMin').value = Math.round((c.activeReplyDelayMinMs || 0) / 1000);
-    document.getElementById('sActiveDelayMax').value = Math.round((c.activeReplyDelayMaxMs || 0) / 1000);
-    document.getElementById('sActiveDurationEnabled').checked = c.activeDurationEnabled !== false;
-    document.getElementById('sActiveDurationMin').value = Math.round((c.activeDurationMinMs || 0) / 60000);
-    document.getElementById('sActiveDurationMax').value = Math.round((c.activeDurationMaxMs || 0) / 60000);
-    document.getElementById('sIdleWindow').value = Math.round((c.idleWindowMs || 0) / 60000);
-    document.getElementById('sIdleRetry').value = c.idleRetryProbability;
-    document.getElementById('sIdleWait').value = Math.round((c.idleRetryWaitMs || 0) / 60000);
-    document.getElementById('sSkipProb').value = c.skipProbability ?? 0.15;
-    document.getElementById('sSurrenderProb').value = c.surrenderProbability ?? 0.08;
-    document.getElementById('sContextWindow').value = c.contextWindow;
-    document.getElementById('sMaxChars').value = c.maxReplyChars ?? 500;
-    document.getElementById('sBurstEnabled').checked = c.burstEnabled !== false;
-    document.getElementById('sBurstIntervalMin').value = c.burstIntervalMinMs ?? 1000;
-    document.getElementById('sBurstIntervalMax').value = c.burstIntervalMaxMs ?? 3000;
-    document.getElementById('sLongGapProb').value = c.longGapProbability ?? 0.1;
-    document.getElementById('sLongGapMin').value = c.longGapMinMs ?? 2500;
-    document.getElementById('sLongGapMax').value = c.longGapMaxMs ?? 5000;
-    document.getElementById('sKeywords').value = (c.mustReplyKeywords || []).join(', ');
-    document.getElementById('sProactiveEnabled').checked = c.proactiveEnabled !== false;
-    document.getElementById('sProactiveIdle').value = Math.round((c.proactiveIdleThresholdMs || 0) / 60000);
-    document.getElementById('sProactiveCheckMin').value = Math.round((c.proactiveCheckMinMs || 0) / 60000);
-    document.getElementById('sProactiveCheckMax').value = Math.round((c.proactiveCheckMaxMs || 0) / 60000);
-    document.getElementById('sProactiveProb').value = c.proactiveProbability;
-  } catch {}
-}
-
-// 每 3 秒只刷新状态徽章/摘要缓冲，不碰输入框
-async function refreshSocialStatus() {
-  try {
-    const s = await api('/api/social');
-    const buff = Object.entries(s.pendingSummaries || {}).map(([k, n]) => k + ':' + n).join('  ') || '无';
-    const phaseLabel = { idle: '观望', active: '活跃', probing: '试探', exiting: '退场中' };
-    const phaseClass = { idle: 'pill g', active: 'pill b', probing: 'pill r', exiting: 'pill' };
-    const stateEntries = Object.entries(s.states || {});
-    const sel = document.getElementById('sStateKey');
-    const prevSel = sel.value;
-    sel.innerHTML = '<option value="">选择会话</option>';
-    for (const [k] of stateEntries) {
-      const opt = document.createElement('option');
-      opt.value = k;
-      opt.textContent = k;
-      sel.appendChild(opt);
-    }
-    if (prevSel && [...sel.options].some(o => o.value === prevSel)) sel.value = prevSel;
-    let html = '摘要缓冲: ' + esc(buff) + '<br>状态:';
-    if (!stateEntries.length) html += ' 暂无（发过消息的群会显示状态）';
-    for (const [k, v] of stateEntries) {
-      html += ` <span class="${phaseClass[v.phase] || 'pill'}">${esc(k)} · ${phaseLabel[v.phase] || esc(v.phase)}</span>`;
-    }
-    document.getElementById('socialStatus').innerHTML = html;
-  } catch {}
-}
-
-document.getElementById('socialSave').addEventListener('click', async () => {
-  const n = (id) => Number(document.getElementById(id).value);
-  const r = await api('/api/social', 'POST', {
-    triggerProbability: Math.min(1, Math.max(0, n('sTrigger'))),
-    activeCheckMinMs: Math.max(5, n('sCheckMin')) * 1000,
-    activeCheckMaxMs: Math.max(5, n('sCheckMax')) * 1000,
-    activeReplyDelayMinMs: Math.max(0, n('sActiveDelayMin')) * 1000,
-    activeReplyDelayMaxMs: Math.max(0, n('sActiveDelayMax')) * 1000,
-    activeDurationEnabled: document.getElementById('sActiveDurationEnabled').checked,
-    activeDurationMinMs: Math.max(1, n('sActiveDurationMin')) * 60000,
-    activeDurationMaxMs: Math.max(1, n('sActiveDurationMax')) * 60000,
-    idleWindowMs: Math.max(1, n('sIdleWindow')) * 60000,
-    idleRetryProbability: Math.min(1, Math.max(0, n('sIdleRetry'))),
-    idleRetryWaitMs: Math.max(1, n('sIdleWait')) * 60000,
-    skipProbability: Math.min(1, Math.max(0, n('sSkipProb'))),
-    surrenderProbability: Math.min(1, Math.max(0, n('sSurrenderProb'))),
-    contextWindow: Math.min(100, Math.max(1, n('sContextWindow'))),
-    maxReplyChars: Math.max(1, n('sMaxChars')),
-    burstEnabled: document.getElementById('sBurstEnabled').checked,
-    burstIntervalMinMs: Math.max(0, n('sBurstIntervalMin')),
-    burstIntervalMaxMs: Math.max(0, n('sBurstIntervalMax')),
-    longGapProbability: Math.min(1, Math.max(0, n('sLongGapProb'))),
-    longGapMinMs: Math.max(0, n('sLongGapMin')),
-    longGapMaxMs: Math.max(0, n('sLongGapMax')),
-    mustReplyKeywords: document.getElementById('sKeywords').value.split(/[,，]/).map(x => x.trim()).filter(Boolean),
-    proactiveEnabled: document.getElementById('sProactiveEnabled').checked,
-    proactiveIdleThresholdMs: Math.max(1, n('sProactiveIdle')) * 60000,
-    proactiveCheckMinMs: Math.max(1, n('sProactiveCheckMin')) * 60000,
-    proactiveCheckMaxMs: Math.max(1, n('sProactiveCheckMax')) * 60000,
-    proactiveProbability: Math.min(1, Math.max(0, n('sProactiveProb')))
-  });
-  document.getElementById('socialMsg').textContent = r.ok ? '✅ 已保存' : ('❌ ' + (r.error || '失败'));
-  document.getElementById('socialMsg').className = r.ok ? 'meta ok' : 'meta err';
-  if (r.ok) { loadSocialForm(); refreshSocialStatus(); }
-});
-document.getElementById('socialFlush').addEventListener('click', async () => {
-  const r = await api('/api/social/flush', 'POST', {});
-  document.getElementById('socialMsg').textContent = r.ok ? '✅ 已触发摘要投喂' : ('❌ ' + (r.error || '失败'));
-  document.getElementById('socialMsg').className = r.ok ? 'meta ok' : 'meta err';
-});
-async function setSocialPhase(phase) {
-  const key = document.getElementById('sStateKey').value;
-  if (!key) { alert('请先选择会话'); return; }
-  const r = await api('/api/social/state', 'POST', { key, phase });
-  document.getElementById('socialMsg').textContent = r.ok ? ('✅ 已设为' + (phase === 'active' ? '活跃' : '观望')) : ('❌ ' + (r.error || '失败'));
-  document.getElementById('socialMsg').className = r.ok ? 'meta ok' : 'meta err';
-  refreshSocialStatus();
-}
-document.getElementById('sStateActive').addEventListener('click', () => setSocialPhase('active'));
-document.getElementById('sStateIdle').addEventListener('click', () => setSocialPhase('idle'));
-
-let slangEntriesCache = [];
-let slangSelected = new Set();
-let slangActiveTab = 'candidate';
-let slangModalId = null;
-let slangModalMode = 'confirm'; // confirm | edit
-
-function slangStatusLabel(status) {
-  return { candidate: '候选', confirmed: '已确认', rejected: '已拒绝' }[status] || esc(status);
-}
-function slangStatusClass(status) {
-  return { candidate: 'pill b', confirmed: 'pill g', rejected: 'pill r' }[status] || 'pill';
-}
-function slangSourceLabel(e) {
-  if (e.source === 'manual') return '手动';
-  if (Array.isArray(e.evidence) && e.evidence.some((ev) => ev.sender === 'AI提交')) return 'AI提交';
-  return '自动提取';
-}
-function slangEvidenceHtml(e) {
-  return Array.isArray(e.evidence) && e.evidence.length
-    ? e.evidence.slice(-2).map((ev) => `<span class="meta">${esc(String(ev.sender || '未知'))}：${esc(String(ev.text || '').slice(0, 30))}</span>`).join('<br>')
-    : '<span class="meta">—</span>';
-}
-function slangSourcesHtml(e) {
-  return Array.isArray(e.sources) && e.sources.length
-    ? e.sources.slice(0, 5).map((s) => `<span class="meta">🔗 ${esc(s)}</span>`).join('<br>')
-    : '';
-}
-function slangSearchFields(e) {
-  return [e.content, e.meaning, e.usage, e.example, e.risk, Array.isArray(e.sources) ? e.sources.join(' ') : '', Array.isArray(e.evidence) ? e.evidence.map((x) => x.text || '').join(' ') : ''].join(' ').toLowerCase();
-}
-function getSlangLimit() {
-  const id = slangActiveTab === 'candidate' ? 'slangLimitCand' : slangActiveTab === 'confirmed' ? 'slangLimitConfirmed' : 'slangLimitRejected';
-  return Math.max(10, Number(document.getElementById(id)?.value) || 100);
-}
-function getSlangSearch() {
-  const id = slangActiveTab === 'candidate' ? 'slangSearchCand' : slangActiveTab === 'confirmed' ? 'slangSearchConfirmed' : 'slangSearchRejected';
-  return String(document.getElementById(id)?.value || '').trim().toLowerCase();
-}
-function selectedIdsForStatus(status) {
-  return [...slangSelected].filter((id) => slangEntriesCache.some((e) => e.id === id && e.status === status));
-}
-function setSlangMsg(text, ok = true) {
-  const msg = document.getElementById('slangMsg');
-  if (!msg) return;
-  msg.textContent = text;
-  msg.className = ok ? 'meta ok' : 'meta err';
-}
-function setSlangTab(tab) {
-  slangActiveTab = tab;
-  document.querySelectorAll('.slang-tab').forEach((btn) => btn.classList.toggle('active', btn.dataset.slangTab === tab));
-  document.querySelectorAll('.slang-panel').forEach((panel) => panel.classList.toggle('active', panel.id === 'slangPanel' + tab[0].toUpperCase() + tab.slice(1)));
-  renderSlangPanel();
-}
-function updateSlangSelectAll(status) {
-  const id = status === 'candidate' ? 'slangCandidateSelectAll' : status === 'confirmed' ? 'slangConfirmedSelectAll' : 'slangRejectedSelectAll';
-  const el = document.getElementById(id);
-  if (!el) return;
-  const list = slangEntriesCache.filter((e) => e.status === status);
-  const q = getSlangSearch();
-  const filtered = q ? list.filter((e) => slangSearchFields(e).includes(q)) : list;
-  el.checked = filtered.length > 0 && filtered.every((e) => slangSelected.has(e.id));
-  el.indeterminate = filtered.some((e) => slangSelected.has(e.id)) && !el.checked;
-}
-
-function renderSlangPanel() {
-  const status = slangActiveTab;
-  const containerId = status === 'candidate' ? 'slangCandidateList' : status === 'confirmed' ? 'slangConfirmedList' : 'slangRejectedList';
-  const box = document.getElementById(containerId);
-  if (!box) return;
-  const list = slangEntriesCache.filter((e) => e.status === status);
-  const q = getSlangSearch();
-  const filtered = q ? list.filter((e) => slangSearchFields(e).includes(q)) : list;
-  if (!filtered.length) {
-    box.innerHTML = '<div class="meta" style="padding:8px">' + (list.length ? '没有符合条件的词条' : (status === 'candidate' ? '暂无候选黑话，等 DSH 自动提取、AI 提交或手动添加' : status === 'confirmed' ? '暂无已确认黑话' : '暂无已拒绝词条')) + '</div>';
-    updateSlangSelectAll(status);
-    return;
-  }
-  const limit = getSlangLimit();
-  const shown = filtered.slice(0, limit);
-  let html = `<div class="meta" style="padding:6px 8px">共 ${filtered.length} 条，显示 ${shown.length} 条（可滚动查找）</div>`;
-  html += '<table><tr><th>选择</th><th>词条</th><th>次数</th><th>来源</th><th>含义 / 用法 / 示例</th><th>参考来源</th><th>语境证据</th><th>操作</th></tr>';
-  for (const e of shown) {
-    const meaning = e.meaning ? esc(e.meaning) : (status === 'candidate' ? '<span class="meta">待研究</span>' : '<span class="meta">无</span>');
-    const checked = slangSelected.has(e.id) ? ' checked' : '';
-    const actions = [];
-    if (status === 'candidate') {
-      actions.push(`<button class="small" data-slang-confirm="${esc(e.id)}">确认</button>`);
-      actions.push(`<button class="small" data-slang-edit="${esc(e.id)}">编辑</button>`);
-      actions.push(`<button class="small" data-slang-reject="${esc(e.id)}">拒绝</button>`);
-    } else if (status === 'confirmed') {
-      actions.push(`<button class="small" data-slang-edit="${esc(e.id)}">编辑</button>`);
-    } else {
-      actions.push(`<button class="small" data-slang-restore="${esc(e.id)}">恢复候选</button>`);
-    }
-    actions.push(`<button class="small danger" data-slang-del="${esc(e.id)}">删</button>`);
-    html += `<tr>
-      <td><input type="checkbox" data-slang-select="${esc(e.id)}"${checked}></td>
-      <td><b>${esc(e.content)}</b><br><span class="${slangStatusClass(status)}">${slangStatusLabel(status)}</span></td>
-      <td>${esc(e.count)}</td>
-      <td>${esc(slangSourceLabel(e))}</td>
-      <td>${meaning}${e.usage ? '<br><span class="meta">用法：' + esc(e.usage) + '</span>' : ''}${e.example ? '<br><span class="meta">例：' + esc(e.example) + '</span>' : ''}${e.risk ? '<br><span class="meta">风险：' + esc(e.risk) + '</span>' : ''}</td>
-      <td>${slangSourcesHtml(e) || '<span class="meta">—</span>'}</td>
-      <td>${slangEvidenceHtml(e)}</td>
-      <td class="row">${actions.join('')}</td>
-    </tr>`;
-  }
-  box.innerHTML = html + '</table>';
-  box.querySelectorAll('[data-slang-select]').forEach((cb) => cb.addEventListener('change', () => {
-    const id = cb.dataset.slangSelect;
-    if (cb.checked) slangSelected.add(id); else slangSelected.delete(id);
-    updateSlangSelectAll(status);
-  }));
-  box.querySelectorAll('[data-slang-confirm]').forEach((btn) => btn.addEventListener('click', () => openSlangModal(btn.dataset.slangConfirm, 'confirm')));
-  box.querySelectorAll('[data-slang-edit]').forEach((btn) => btn.addEventListener('click', () => openSlangModal(btn.dataset.slangEdit, 'edit')));
-  box.querySelectorAll('[data-slang-reject]').forEach((btn) => btn.addEventListener('click', async () => {
-    const r2 = await api('/api/slang/' + btn.dataset.slangReject + '/reject', 'POST', {});
-    if (!r2.ok) alert(r2.error || '拒绝失败');
-    setSlangMsg(r2.ok ? '✅ 已拒绝' : ('❌ ' + (r2.error || '失败')), r2.ok);
-    refreshSlang();
-  }));
-  box.querySelectorAll('[data-slang-restore]').forEach((btn) => btn.addEventListener('click', async () => {
-    const e = slangEntriesCache.find((x) => x.id === btn.dataset.slangRestore);
-    if (!e) return;
-    const r2 = await api('/api/slang/' + e.id, 'PATCH', { status: 'candidate' });
-    if (!r2.ok) alert(r2.error || '恢复失败');
-    setSlangMsg(r2.ok ? '✅ 已恢复为候选' : ('❌ ' + (r2.error || '失败')), r2.ok);
-    refreshSlang();
-  }));
-  box.querySelectorAll('[data-slang-del]').forEach((btn) => btn.addEventListener('click', async () => {
-    if (!confirm('确定删除该黑话？')) return;
-    const r2 = await api('/api/slang/' + btn.dataset.slangDel, 'DELETE', {});
-    if (!r2.ok) alert(r2.error || '删除失败');
-    setSlangMsg(r2.ok ? '✅ 已删除' : ('❌ ' + (r2.error || '失败')), r2.ok);
-    slangSelected.delete(btn.dataset.slangDel);
-    refreshSlang();
-  }));
-  updateSlangSelectAll(status);
-}
-
-async function refreshSlang() {
-  try {
-    const r = await api('/api/slang');
-    slangEntriesCache = r.entries || [];
-    renderSlangPanel();
-  } catch (e) {
-    const box = document.getElementById('slangCandidateList');
-    if (box) box.innerHTML = '<span class="meta">加载失败</span>';
-  }
-}
-
-function openSlangModal(id, mode) {
-  const e = slangEntriesCache.find((x) => x.id === id);
-  if (!e) return;
-  slangModalId = id;
-  slangModalMode = mode;
-  document.getElementById('slangModalTitle').textContent = mode === 'confirm' ? `确认黑话：${e.content}` : `编辑黑话：${e.content}`;
-  document.getElementById('slangModalContent').textContent = mode === 'confirm'
-    ? '你可以直接填写含义/用法并转正，也可以先送 DSH 深度联网研究，研究结果回来后在此处删改再确认。'
-    : '修改后保存；候选不会转正，已确认仍保持已确认。';
-  document.getElementById('slangModalMeaning').value = e.meaning || '';
-  document.getElementById('slangModalUsage').value = e.usage || '';
-  document.getElementById('slangModalExample').value = e.example || '';
-  document.getElementById('slangModalRisk').value = e.risk || '';
-  document.getElementById('slangModalSources').value = Array.isArray(e.sources) ? e.sources.join('\n') : '';
-  document.getElementById('slangModalDirectConfirm').textContent = mode === 'confirm' ? '直接确认（转正）' : '保存修改';
-  document.getElementById('slangModalSendResearch').style.display = mode === 'confirm' && e.status === 'candidate' ? '' : 'none';
-  document.getElementById('slangModalOverlay').classList.add('open');
-}
-function closeSlangModal() {
-  document.getElementById('slangModalOverlay').classList.remove('open');
-  slangModalId = null;
-}
-function readSlangModalPayload() {
-  return {
-    meaning: document.getElementById('slangModalMeaning').value.trim(),
-    usage: document.getElementById('slangModalUsage').value.trim(),
-    example: document.getElementById('slangModalExample').value.trim(),
-    risk: document.getElementById('slangModalRisk').value.trim(),
-    sources: document.getElementById('slangModalSources').value.split(/\n/).map((s) => s.trim()).filter(Boolean)
-  };
-}
-
-document.querySelectorAll('.slang-tab').forEach((btn) => btn.addEventListener('click', () => setSlangTab(btn.dataset.slangTab)));
-document.getElementById('slangSearchCand').addEventListener('input', renderSlangPanel);
-document.getElementById('slangSearchConfirmed').addEventListener('input', renderSlangPanel);
-document.getElementById('slangSearchRejected').addEventListener('input', renderSlangPanel);
-document.getElementById('slangLimitCand').addEventListener('change', renderSlangPanel);
-document.getElementById('slangLimitConfirmed').addEventListener('change', renderSlangPanel);
-document.getElementById('slangLimitRejected').addEventListener('change', renderSlangPanel);
-document.getElementById('slangCandidateSelectAll').addEventListener('change', (e) => {
-  const list = slangEntriesCache.filter((x) => x.status === 'candidate');
-  const q = getSlangSearch();
-  const filtered = q ? list.filter((x) => slangSearchFields(x).includes(q)) : list;
-  for (const x of filtered) { if (e.target.checked) slangSelected.add(x.id); else slangSelected.delete(x.id); }
-  renderSlangPanel();
-});
-document.getElementById('slangConfirmedSelectAll').addEventListener('change', (e) => {
-  const list = slangEntriesCache.filter((x) => x.status === 'confirmed');
-  const q = getSlangSearch();
-  const filtered = q ? list.filter((x) => slangSearchFields(x).includes(q)) : list;
-  for (const x of filtered) { if (e.target.checked) slangSelected.add(x.id); else slangSelected.delete(x.id); }
-  renderSlangPanel();
-});
-document.getElementById('slangRejectedSelectAll').addEventListener('change', (e) => {
-  const list = slangEntriesCache.filter((x) => x.status === 'rejected');
-  const q = getSlangSearch();
-  const filtered = q ? list.filter((x) => slangSearchFields(x).includes(q)) : list;
-  for (const x of filtered) { if (e.target.checked) slangSelected.add(x.id); else slangSelected.delete(x.id); }
-  renderSlangPanel();
-});
-document.getElementById('slangBatchResearch').addEventListener('click', async () => {
-  const ids = selectedIdsForStatus('candidate');
-  if (!ids.length) { alert('请先勾选要研究的候选词'); return; }
-  const r = await api('/api/slang/research', 'POST', { ids });
-  setSlangMsg(r.ok ? `✅ 已送 ${r.count} 条候选到 DSH 深度联网研究，完成后刷新查看结果` : ('❌ ' + (r.error || '失败')), r.ok);
-  if (r.ok) refreshSlang();
-});
-document.getElementById('slangBatchConfirm').addEventListener('click', async () => {
-  const ids = selectedIdsForStatus('candidate');
-  if (!ids.length) { alert('请先勾选要确认的候选词'); return; }
-  if (!confirm(`确定批量确认 ${ids.length} 条候选？缺少含义的会被跳过。`)) return;
-  const r = await api('/api/slang/batch-confirm', 'POST', { ids });
-  setSlangMsg(r.ok ? `✅ 已确认 ${r.confirmedCount} 条，跳过 ${r.skippedCount} 条` : ('❌ ' + (r.error || '失败')), r.ok);
-  if (r.ok) { slangSelected.clear(); refreshSlang(); }
-});
-document.getElementById('slangBatchReject').addEventListener('click', async () => {
-  const ids = selectedIdsForStatus('candidate');
-  if (!ids.length) { alert('请先勾选要拒绝的候选词'); return; }
-  if (!confirm(`确定拒绝 ${ids.length} 条候选？`)) return;
-  const r = await api('/api/slang/batch-reject', 'POST', { ids });
-  setSlangMsg(r.ok ? `✅ 已拒绝 ${r.rejectedCount} 条` : ('❌ ' + (r.error || '失败')), r.ok);
-  if (r.ok) { slangSelected.clear(); refreshSlang(); }
-});
-document.getElementById('slangBatchDeleteCand').addEventListener('click', async () => {
-  const ids = selectedIdsForStatus('candidate');
-  if (!ids.length) { alert('请先勾选要删除的候选词'); return; }
-  if (!confirm(`确定删除 ${ids.length} 条候选？此操作不可恢复！`)) return;
-  const r = await api('/api/slang/batch-delete', 'POST', { ids });
-  setSlangMsg(r.ok ? `✅ 已删除 ${r.removedCount} 条候选` : ('❌ ' + (r.error || '失败')), r.ok);
-  if (r.ok) { slangSelected.clear(); refreshSlang(); }
-});
-document.getElementById('slangBatchDeleteConfirmed').addEventListener('click', async () => {
-  const ids = selectedIdsForStatus('confirmed');
-  if (!ids.length) { alert('请先勾选要删除的已确认词条'); return; }
-  if (!confirm(`确定删除 ${ids.length} 条已确认黑话？此操作不可恢复！`)) return;
-  const r = await api('/api/slang/batch-delete', 'POST', { ids });
-  setSlangMsg(r.ok ? `✅ 已删除 ${r.removedCount} 条已确认` : ('❌ ' + (r.error || '失败')), r.ok);
-  if (r.ok) { slangSelected.clear(); refreshSlang(); }
-});
-document.getElementById('slangBatchDeleteRejected').addEventListener('click', async () => {
-  const ids = selectedIdsForStatus('rejected');
-  if (!ids.length) { alert('请先勾选要删除的已拒绝词条'); return; }
-  if (!confirm(`确定删除 ${ids.length} 条已拒绝词条？此操作不可恢复！`)) return;
-  const r = await api('/api/slang/batch-delete', 'POST', { ids });
-  setSlangMsg(r.ok ? `✅ 已删除 ${r.removedCount} 条已拒绝` : ('❌ ' + (r.error || '失败')), r.ok);
-  if (r.ok) { slangSelected.clear(); refreshSlang(); }
-});
-document.getElementById('slangBatchRestore').addEventListener('click', async () => {
-  const ids = selectedIdsForStatus('rejected');
-  if (!ids.length) { alert('请先勾选要恢复的已拒绝词条'); return; }
-  let okCount = 0;
-  for (const id of ids) {
-    const r = await api('/api/slang/' + id, 'PATCH', { status: 'candidate' });
-    if (r.ok) okCount++;
-  }
-  setSlangMsg(`✅ 已恢复 ${okCount}/${ids.length} 条为候选`);
-  if (okCount) { slangSelected.clear(); refreshSlang(); }
-});
-document.getElementById('slangModalDirectConfirm').addEventListener('click', async () => {
-  if (!slangModalId) return;
-  const payload = readSlangModalPayload();
-  if (!payload.meaning) { alert('请先填写含义，确认后才会注入 AI 上下文'); return; }
-  const e = slangEntriesCache.find((x) => x.id === slangModalId);
-  if (!e) return;
-  const path = slangModalMode === 'confirm' ? `/api/slang/${e.id}/confirm` : `/api/slang/${e.id}`;
-  const r2 = await api(path, slangModalMode === 'confirm' ? 'POST' : 'PATCH', payload);
-  if (!r2.ok) alert(r2.error || '保存失败');
-  setSlangMsg(r2.ok ? (slangModalMode === 'confirm' ? '✅ 已确认转正' : '✅ 已保存') : ('❌ ' + (r2.error || '失败')), r2.ok);
-  closeSlangModal();
-  refreshSlang();
-});
-document.getElementById('slangModalSendResearch').addEventListener('click', async () => {
-  if (!slangModalId) return;
-  const r = await api('/api/slang/research', 'POST', { ids: [slangModalId] });
-  setSlangMsg(r.ok ? `✅ 已送「${slangEntriesCache.find((x) => x.id === slangModalId)?.content || ''}」到 DSH 深度联网研究，稍后刷新查看结果` : ('❌ ' + (r.error || '失败')), r.ok);
-  closeSlangModal();
-  refreshSlang();
-});
-document.getElementById('slangModalCancel').addEventListener('click', closeSlangModal);
-document.getElementById('slangModalOverlay').addEventListener('click', (e) => { if (e.target.id === 'slangModalOverlay') closeSlangModal(); });
-
-document.getElementById('slangAdd').addEventListener('click', async () => {
-  const content = document.getElementById('slangContent').value.trim();
-  const meaning = document.getElementById('slangMeaning').value.trim();
-  const usage = document.getElementById('slangUsage').value.trim();
-  const example = document.getElementById('slangExample').value.trim();
-  if (!content) { alert('词条不能为空'); return; }
-  const r = await api('/api/slang', 'POST', { content, meaning, usage, example });
-  document.getElementById('slangMsg').textContent = r.ok ? '✅ 已添加' : ('❌ ' + (r.error || '失败'));
-  document.getElementById('slangMsg').className = r.ok ? 'meta ok' : 'meta err';
-  if (r.ok) {
-    document.getElementById('slangContent').value = '';
-    document.getElementById('slangMeaning').value = '';
-    document.getElementById('slangUsage').value = '';
-    document.getElementById('slangExample').value = '';
-    refreshSlang();
-  }
-});
-document.getElementById('slangExtract').addEventListener('click', async () => {
-  const r = await api('/api/slang/extract', 'POST', {});
-  setSlangMsg(r.ok ? '✅ 已触发提取' : ('❌ ' + (r.error || '失败')), r.ok);
-});
-document.getElementById('slangResearch').addEventListener('click', async () => {
-  const r = await api('/api/slang/research', 'POST', {});
-  setSlangMsg(r.ok ? ('✅ 已触发研究 ' + r.count + ' 条') : ('❌ ' + (r.error || '失败')), r.ok);
-});
-function loadSlangConfig() {
-  api('/api/slang').then(r => {
-    const c = r.config || {};
-    document.getElementById('slangEnabled').checked = c.enabled !== false;
-    document.getElementById('slangExtractMin').value = c.extractMinMessages ?? 10;
-    document.getElementById('slangCooldown').value = c.extractCooldownMs ?? 300000;
-    document.getElementById('slangThresholds').value = (c.inferenceThresholds || [2, 4, 8]).join(', ');
-    document.getElementById('slangInjectMax').value = c.injectMax ?? 8;
-    document.getElementById('slangLearnerPreset').value = c.learnerPreset || 'qq-chat';
-    document.getElementById('slangWorkspaceTitle').value = c.workspaceTitle || 'QQ 黑话学习';
-    document.getElementById('slangAutoResearch').checked = c.autoResearch !== false;
-  }).catch(() => {});
-}
-document.getElementById('slangConfigSave').addEventListener('click', async () => {
-  const r = await api('/api/slang/config', 'POST', {
-    enabled: document.getElementById('slangEnabled').checked,
-    extractMinMessages: Number(document.getElementById('slangExtractMin').value) || 10,
-    extractCooldownMs: Number(document.getElementById('slangCooldown').value) || 300000,
-    inferenceThresholds: document.getElementById('slangThresholds').value.split(/[,，\s]+/).map(Number).filter(Boolean),
-    injectMax: Number(document.getElementById('slangInjectMax').value) || 8,
-    learnerPreset: document.getElementById('slangLearnerPreset').value.trim(),
-    workspaceTitle: document.getElementById('slangWorkspaceTitle').value.trim(),
-    autoResearch: document.getElementById('slangAutoResearch').checked
-  });
-  const msg = document.getElementById('slangConfigMsg');
-  msg.textContent = r.ok ? '✅ 已保存' : ('❌ ' + (r.error || '失败'));
-  msg.className = r.ok ? 'meta ok' : 'meta err';
-  if (r.ok) loadSlangConfig();
-});
-
 function loadSecurity() {
   api('/api/security').then(r => {
     document.getElementById('secInterceptNotify').checked = r.security?.interceptNotify !== false;
@@ -4425,12 +2963,6 @@ document.getElementById('consoleTokenRandom').addEventListener('click', () => ch
 // Presentation layer: keep every existing control mounted so drafts and API contracts survive navigation.
 const consolePages = {
   overview: ['运行总览', '让每一次连接，都自然发生。', '掌握桥接状态，轻松管理你的 QQ 智能伙伴。'],
-  sessions: ['会话与审批', '让每一段对话，都有迹可循。', '查看 QQ 与 DSH 的会话映射，以及等待你回复的审批和提问。'],
-  persona: ['人格与角色', '给你的伙伴，一点独特个性。', '选择已有角色，或用自己的语言写下新的性格与表达方式。'],
-  'social-v2': ['二代仿真', '自主参与，恰到好处。', '管理 AI 的工具、唤醒与发言节奏。展开需要调整的分组，修改后保存参数。'],
-  'social-v1': ['一代仿真', '为自然对话，设定合适的节奏。', '调整参与概率、活跃周期和分条发送；所有配置项完整保留。'],
-  slang: ['黑话词库', '读懂群聊里的，言外之意。', '从候选到确认，让 AI 逐渐熟悉大家的表达习惯。'],
-  usage: ['令牌与花费', '每一次思考，都算得清楚。', '实时查看 AI 的 token 消耗与花费，可下钻到每个群、每个好友、每一轮对话。'],
   access: ['访问与安全', '明确边界，安心连接。', '管理允许对话的对象、管理员权限与控制台访问凭证。'],
   operations: ['调试与运维', '让桥接，始终井然有序。', '测试消息、引导 AI，或维护桥接进程与会话工作区。'],
   reference: ['工具参考', '每一种能力，都清晰可见。', '查看桥接提供给 DSH 的 MCP 工具与用途。']
@@ -4461,7 +2993,7 @@ function setConsolePage(page, { updateHash = true, focus = false, target = '' } 
   if (updateHash && location.hash !== '#' + page) history.pushState({}, '', '#' + page);
   closeConsoleSearch();
   // 语音库按需加载：进入二代仿真页时才探测（避免每次开控制台都压网关）。
-  if (page === 'social-v2' && typeof loadVoiceLibrary === 'function') loadVoiceLibrary();
+  if (page === 'operations' && typeof loadVoiceLibrary === 'function') loadVoiceLibrary();
   if (focus) {
     document.getElementById('mainContent').focus({ preventScroll: true });
     document.getElementById(target || 'mainContent')?.scrollIntoView({ block: 'start', behavior: 'instant' });
@@ -4479,25 +3011,25 @@ document.querySelector('.skip-link').addEventListener('click', event => {
   document.getElementById('mainContent').focus();
   document.getElementById('mainContent').scrollIntoView({ block: 'start', behavior: 'instant' });
 });
-function updateOverview(status, modeLabel) {
+function updateOverview(status) {
   const connection = document.getElementById('statusText');
-  connection.textContent = status.dshReady ? 'DSH 已连接' : 'DSH 未连接';
-  connection.className = 'status-badge ' + (status.dshReady ? 'online' : 'offline');
-  document.getElementById('metricDsh').textContent = status.dshReady ? '已连接' : '未连接';
-  document.getElementById('metricDsh').className = status.dshReady ? 'ok' : 'err';
-  document.getElementById('metricDshHint').textContent = status.dshReady ? '桥接状态已同步' : '请检查 DSH 是否运行';
+  // 桥接只连网关：/api/status 的 gateway.ready 就是唯一的连通性信号。
+  const linked = Boolean(status.gateway && status.gateway.ready);
+  connection.textContent = linked ? '网关 已连接' : '网关 未连接';
+  connection.className = 'status-badge ' + (linked ? 'online' : 'offline');
+  document.getElementById('metricDsh').textContent = linked ? '已连接' : '未连接';
+  document.getElementById('metricDsh').className = linked ? 'ok' : 'err';
+  document.getElementById('metricDshHint').textContent = linked ? '桥接状态已同步' : '请检查网关是否运行';
   renderSnowlumaHealth(status.snowluma);
-  document.getElementById('metricMode').textContent = modeLabel.replace('模式', '');
-  document.getElementById('metricRole').textContent = '角色 · ' + (status.role || '默认人格');
+  const v2 = document.getElementById('metricV2');
+  if (v2) {
+    v2.textContent = status.socialV2Paused ? '已暂停' : '运行中';
+    v2.className = status.socialV2Paused ? 'err' : 'ok';
+    document.getElementById('metricV2Hint').textContent = status.socialV2Paused ? '所有会话暂不处理消息' : '按唤醒配置自主参与群聊';
+  }
   document.getElementById('accessSummary').textContent = '管理员 ' + (status.ownerQQ || '未设置') + ' · ' + (status.allowGroups || []).length + ' 个白名单群 · ' + (status.allowPrivate || []).length + ' 位白名单好友';
   document.getElementById('lastUpdated').textContent = '状态同步于 ' + new Date().toLocaleTimeString('zh-CN', { hour12: false });
   document.getElementById('connectionAlert').hidden = true;
-  const silent = status.roleMode === 'silent';
-  for (const [id, active] of [['silentOn', silent], ['silentOff', !silent]]) {
-    const button = document.getElementById(id);
-    button.classList.toggle('active', active);
-    button.setAttribute('aria-pressed', String(active));
-  }
 }
 function setConnectionError(error) {
   document.getElementById('statusText').className = 'status-badge offline';
@@ -4515,7 +3047,7 @@ function setConnectionError(error) {
 }
 document.getElementById('refreshConsole').addEventListener('click', async function () {
   this.disabled = true;
-  await Promise.allSettled([refresh(), refreshSessions(), refreshPending(), refreshSocialStatus(), refreshV2Activity()]);
+  await Promise.allSettled([refresh(), refreshV2Activity()]);
   this.disabled = false;
   if (document.getElementById('connectionAlert').hidden) showConsoleToast('运行状态已刷新');
 });
@@ -4534,14 +3066,13 @@ document.querySelectorAll('input,select,textarea').forEach(input => {
     }
     input.setAttribute('aria-label', label.textContent.trim() + (siblings.length > 1 ? (siblings.indexOf(input) === 0 ? '（下限）' : '（上限）') : ''));
   } else {
-    const names = { consoleTokenInput: '新的控制台访问令牌', closedPreset: '封闭 Agent 使用的 DSH 预设', tsKind: '测试消息目标类型', aiNotifyKind: '后台提醒目标类型', sStateKey: '一代仿真会话', v2SessionSelect: '二代仿真白名单会话', slangLimitCand: '候选词显示数量', slangLimitConfirmed: '已确认词显示数量', slangLimitRejected: '已拒绝词显示数量' };
+    const names = { consoleTokenInput: '新的控制台访问令牌', tsKind: '测试消息目标类型', v2SessionSelect: '二代仿真白名单会话' };
     input.setAttribute('aria-label', names[input.id] || input.placeholder || input.closest('section')?.querySelector('h2')?.textContent || '设置');
   }
 });
-const primaryActions = ['roleSet','roleCreate','socialSave','v2ConfigSave','v2ConfigSaveTop','wlSave','secSave','consoleTokenSave','tsSend','aiNotifySend','slangAdd','slangConfigSave','slangModalDirectConfirm'];
+const primaryActions = ['v2ConfigSave','v2ConfigSaveTop','wlSave','secSave','consoleTokenSave','tsSend'];
 primaryActions.forEach(id => document.getElementById(id)?.classList.add('primary'));
 document.querySelectorAll('.meta[id$="Msg"], .meta[id$="Msg2"]').forEach(el => el.setAttribute('role','status'));
-document.getElementById('section-mode').querySelector('h2').dataset.note = '选择后即时生效';
 document.getElementById('section-activity').querySelector('h2').dataset.note = '每 3 秒自动同步';
 
 const searchInput = document.getElementById('consoleSearch');
@@ -4571,10 +3102,6 @@ searchInput.addEventListener('input', () => {
       setConsolePage(entry.page);
       let ancestor = entry.target.closest('details');
       while (ancestor) { ancestor.open = true; ancestor = ancestor.parentElement.closest('details'); }
-      if (entry.target.closest('.slang-panel')) {
-        const panels = { slangPanelCandidate: 'candidate', slangPanelConfirmed: 'confirmed', slangPanelRejected: 'rejected' };
-        setSlangTab(panels[entry.target.closest('.slang-panel').id]);
-      }
       entry.target.scrollIntoView({ block:'center', behavior:'instant' });
       if (!entry.target.hasAttribute('tabindex') && !entry.target.matches('input,textarea,select,button,summary')) entry.target.tabIndex = -1;
       entry.target.focus({ preventScroll:true });
@@ -4593,24 +3120,6 @@ searchInput.addEventListener('keydown', event => {
 document.addEventListener('click', event => { if (!event.target.closest('.search-wrap')) closeConsoleSearch(); });
 searchResults.addEventListener('keydown', event => { if (event.key === 'Escape') { closeConsoleSearch(); searchInput.focus(); } });
 
-// Keyboard support for the existing editor dialog without replacing its save flow.
-let modalPreviousFocus;
-const slangOverlay = document.getElementById('slangModalOverlay');
-new MutationObserver(() => {
-  if (slangOverlay.classList.contains('open')) {
-    modalPreviousFocus = document.activeElement;
-    document.getElementById('slangModalMeaning').focus();
-  } else modalPreviousFocus?.focus();
-}).observe(slangOverlay, { attributes:true, attributeFilter:['class'] });
-slangOverlay.addEventListener('keydown', event => {
-  if (event.key === 'Escape') { event.preventDefault(); closeSlangModal(); }
-  if (event.key === 'Tab') {
-    const controls = [...slangOverlay.querySelectorAll('button,input,textarea,select')].filter(el => !el.disabled && el.getClientRects().length);
-    const first = controls[0], last = controls.at(-1);
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-  }
-});
 const tokenToggle = document.createElement('button');
 tokenToggle.id = 'consoleTokenToggle'; tokenToggle.className = 'small'; tokenToggle.textContent = '显示令牌'; tokenToggle.type = 'button'; tokenToggle.setAttribute('aria-pressed','false');
 tokenToggle.addEventListener('click', () => {
@@ -4621,436 +3130,10 @@ tokenToggle.addEventListener('click', () => {
   tokenToggle.setAttribute('aria-pressed',String(visible));
 });
 document.getElementById('consoleTokenInput').after(tokenToggle);
-// ── 消耗走势图（手写 SVG） ───────────────────────────────────────────────
-// 为什么不用图表库：控制台 CSP 是 default-src 'self'，不能引外部脚本；
-// 而 SVG 用 document.createElementNS 生成既没有 innerHTML 转义风险，
-// 也能直接用 CSS 变量跟随深浅主题。
-let usageChartHours = 24;
-let usageChartMetric = 'cost';
-let usageChartData = null;
-
-const SVG_NS = 'http://www.w3.org/2000/svg';
-function svgEl(name, attrs = {}) {
-  const node = document.createElementNS(SVG_NS, name);
-  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
-  return node;
-}
-function usageBucketValue(b, metric) {
-  return metric === 'tokens' ? (Number(b.tokens) || 0) : (Number(b.cost) || 0);
-}
-function usageMetricLabel(metric) {
-  return metric === 'tokens' ? 'token' : '花费';
-}
-function usageAxisValue(v, metric, sym) {
-  if (metric === 'tokens') return usageNum(v);
-  if (v === 0) return sym + '0';
-  return v < 0.01 ? sym + v.toFixed(4) : sym + v.toFixed(2);
-}
-function usageBucketClock(ms, bucketMs) {
-  const d = new Date(ms);
-  const p = (n) => String(n).padStart(2, '0');
-  // 桶宽 ≥ 1 天时只显示日期，否则显示「日 时:分」，跨天也能分辨。
-  if (bucketMs >= 24 * 3600 * 1000) return `${d.getMonth() + 1}/${d.getDate()}`;
-  return `${d.getMonth() + 1}/${d.getDate()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-function renderUsageChart(series) {
-  const box = document.getElementById('usageChart');
-  const totalEl = document.getElementById('usageChartTotal');
-  const hintEl = document.getElementById('usageChartHint');
-  const noteEl = document.getElementById('usageChartNote');
-  usageChartData = series;
-  const sym = series?.symbol || '¥';
-  const buckets = Array.isArray(series?.buckets) ? series.buckets : [];
-  if (!buckets.length) {
-    box.innerHTML = '';
-    box.textContent = '暂无数据';
-    totalEl.textContent = '—';
-    hintEl.textContent = '还没有用量记录';
-    noteEl.textContent = '';
-    return;
-  }
-  const metric = usageChartMetric;
-  const values = buckets.map((b) => usageBucketValue(b, metric));
-  const max = Math.max(...values, 0);
-  // 全零时给一个假上限，避免除零；同时让空图看起来是"平"的而不是报错。
-  const scaleMax = max > 0 ? max : 1;
-
-  const W = 960;
-  const H = 240;
-  const padL = 62;
-  const padR = 12;
-  const padT = 12;
-  const padB = 34;
-  const plotW = W - padL - padR;
-  const plotH = H - padT - padB;
-  const step = plotW / buckets.length;
-  const barW = Math.max(2, step * 0.72);
-
-  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${usageMetricLabel(metric)}随时间的走势图` });
-
-  // 横向网格 + 纵轴刻度（3 条线即可：0 / 一半 / 最大）
-  // 窗口内完全没有用量时（max === 0）三条刻度都写 0：不能编出一个 ¥1 的假量程，
-  // 那会让人以为"有量但很小"。
-  for (let i = 0; i <= 2; i += 1) {
-    const y = padT + plotH - (plotH * i) / 2;
-    svg.appendChild(svgEl('line', { class: 'usage-grid', x1: padL, y1: y, x2: W - padR, y2: y }));
-    const label = svgEl('text', { class: 'usage-axis', x: padL - 8, y: y + 3, 'text-anchor': 'end' });
-    label.textContent = usageAxisValue(max > 0 ? (scaleMax * i) / 2 : 0, metric, sym);
-    svg.appendChild(label);
-  }
-
-  // 柱：颜色 = 该桶的峰谷档位，所以"什么时候贵"是一眼可见的
-  for (let i = 0; i < buckets.length; i += 1) {
-    const b = buckets[i];
-    const v = values[i];
-    const x = padL + i * step + (step - barW) / 2;
-    const h = v > 0 ? Math.max(1.5, (v / scaleMax) * plotH) : 0;
-    const tooltip = svgEl('title');
-    tooltip.textContent = `${usageBucketClock(b.t, series.bucketMs)}\n${usageMetricLabel(metric)}：${usageAxisValue(v, metric, sym)}`
-      + `\n未命中输入：${usageNum(b.cacheMiss)} ｜ 命中输入：${usageNum(b.cacheHit)} ｜ 输出：${usageNum(b.output)}`
-      + `\n步数：${usageNum(b.steps)} ｜ 轮次：${usageNum(b.turns)}`
-      + `\n时段：${b.tier === 'peak' ? '高峰（单价 ×2）' : (b.tier === 'mixed' ? '跨时段' : '空闲')}`
-      + (b.keys?.length ? `\n会话：${b.keys.join('、')}` : '');
-    if (h > 0) {
-      const rect = svgEl('rect', { x, y: padT + plotH - h, width: barW, height: h, rx: 2, class: `usage-bar-${b.tier === 'peak' ? 'peak' : (b.tier === 'mixed' ? 'mixed' : 'off')}` });
-      rect.appendChild(tooltip);
-      svg.appendChild(rect);
-    }
-    // 透明命中区：0 值的桶也能 hover（鼠标移到空白处也要能看出那一刻是空闲还是高峰）
-    const hit = svgEl('rect', { x: padL + i * step, y: padT, width: step, height: plotH, class: 'usage-hit' });
-    hit.appendChild(tooltip.cloneNode(true));
-    svg.appendChild(hit);
-  }
-
-  // 横轴：最多 6 个刻度，避免挤在一起
-  const tickEvery = Math.max(1, Math.ceil(buckets.length / 6));
-  for (let i = 0; i < buckets.length; i += tickEvery) {
-    const label = svgEl('text', { class: 'usage-axis', x: padL + i * step + step / 2, y: H - padB + 16, 'text-anchor': 'middle' });
-    label.textContent = usageBucketClock(buckets[i].t, series.bucketMs);
-    svg.appendChild(label);
-  }
-
-  box.innerHTML = '';
-  box.appendChild(svg);
-
-  const windowTotal = buckets.reduce((sum, b) => sum + usageBucketValue(b, metric), 0);
-  totalEl.textContent = metric === 'tokens' ? `${usageNum(windowTotal)} token` : usageMoney(windowTotal, sym);
-  const busiest = series.busiest;
-  hintEl.textContent = `窗口内合计 ｜ 每格 ${Math.round(series.bucketMs / 60000)} 分钟`
-    + (busiest && metric === 'cost' ? ` ｜ 最贵一格：${usageBucketClock(busiest.t, series.bucketMs)} ${usageMoney(busiest.cost, sym)}` : '')
-    + (series.estimated ? ' ｜ ⚠️ 含按兜底价估算的模型' : '');
-
-  // 图上一定要能看出"还有多少没画进来"：投影基线覆盖的更早历史没有逐时明细。
-  const notes = [];
-  if (Number(series.offChartCost) > 0.0001) {
-    notes.push(`另有 ${usageMoney(series.offChartCost, sym)}（约 ${usageNum(series.offChartTokens)} token）属于更早的历史，只有累计值、没有逐时明细，因此不在上图里；所以本图合计会小于「总花费」。`);
-  }
-  if (series.countedSamples === 0) {
-    notes.push('所选时间窗内没有采样：要么这段时间真的没调用，要么逐轮明细已被容量上限淘汰（累计总量仍然准确）。');
-  }
-  noteEl.textContent = notes.join(' ');
-}
-
-async function refreshUsageChart() {
-  try {
-    const r = await api(`/api/tokens/series?hours=${usageChartHours}`);
-    renderUsageChart(r);
-  } catch (error) {
-    document.getElementById('usageChart').textContent = `走势读取失败：${error?.message || '未知错误'}`;
-  }
-}
-
-document.getElementById('usageChartControls').addEventListener('click', (ev) => {
-  const hoursBtn = ev.target.closest('[data-usage-hours]');
-  const metricBtn = ev.target.closest('[data-usage-metric]');
-  if (hoursBtn) {
-    usageChartHours = Number(hoursBtn.dataset.usageHours) || 24;
-    document.querySelectorAll('#usageChartControls [data-usage-hours]').forEach((b) => b.classList.toggle('active', b === hoursBtn));
-    refreshUsageChart();
-  } else if (metricBtn) {
-    usageChartMetric = metricBtn.dataset.usageMetric === 'tokens' ? 'tokens' : 'cost';
-    document.querySelectorAll('#usageChartControls [data-usage-metric]').forEach((b) => b.classList.toggle('active', b === metricBtn));
-    // 只换纵轴：不重新请求，直接重画现有数据。
-    if (usageChartData) renderUsageChart(usageChartData);
-  }
-});
-
-// ── 令牌与花费 ───────────────────────────────────────────────────────────
-// 数据分三层：累计总量（DSH tokenUsage 投影，权威）→ 按会话归并 → 逐轮明细。
-// 金额一律在渲染时算，价目表改了不需要重算历史。
-let usageSelectedKey = '';
-let usageConversationsCache = [];
-
-function usageNum(n) {
-  const v = Number(n) || 0;
-  if (v >= 1e8) return (v / 1e8).toFixed(2) + ' 亿';
-  if (v >= 1e5) return (v / 1e4).toFixed(0) + ' 万';
-  if (v >= 1e4) return (v / 1e4).toFixed(1) + ' 万';
-  return String(Math.round(v)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-function usageMoney(n, sym) {
-  const s = sym || '¥';
-  const v = Number(n) || 0;
-  if (v === 0) return s + '0';
-  if (v < 0.01) return s + v.toFixed(4);
-  return s + v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-function usagePct(n) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return '—';
-  return (v * 100).toFixed(1) + '%';
-}
-function usageRate(buckets) {
-  const b = buckets || {};
-  const input = (b.cacheMiss || 0) + (b.cacheHit || 0) + (b.cacheWrite || 0);
-  return input > 0 ? (b.cacheHit || 0) / input : 0;
-}
-function usageTime(ms) {
-  if (!ms) return '—';
-  try { return new Date(ms).toLocaleString('zh-CN', { hour12: false }); } catch (error) { return '—'; }
-}
-function usageBar(share) {
-  const ratio = Math.max(0, Math.min(1, Number(share) || 0));
-  const width = Math.max(2, Math.round(ratio * 100));
-  return `<span class="usage-bar-wrap"><span class="usage-bar-track"><span class="usage-bar-fill" style="width:${width}%"></span></span><span class="meta">${(ratio * 100).toFixed(1)}%</span></span>`;
-}
-function usageTierTag(tier) {
-  if (tier === 'peak') return '<span class="pill r usage-tier">高峰</span>';
-  if (tier === 'off') return '<span class="pill g usage-tier">空闲</span>';
-  if (tier === 'mixed') return '<span class="pill b usage-tier">跨时段</span>';
-  return '<span class="meta">—</span>';
-}
-
-function syncUsageKeySelect(keys) {
-  const sel = document.getElementById('usageKeySelect');
-  if (!sel) return;
-  if (!keys.includes(usageSelectedKey)) usageSelectedKey = keys[0] || '';
-  const signature = keys.join('\u0000');
-  if (sel.dataset.signature !== signature) {
-    sel.dataset.signature = signature;
-    sel.innerHTML = keys.length
-      ? keys.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join('')
-      : '<option value="">（暂无会话）</option>';
-  }
-  // 每 3 秒的轮询不得覆盖用户正在操作的控件。
-  if (document.activeElement !== sel) sel.value = usageSelectedKey;
-}
-
-function renderUsageConversations(r) {
-  const box = document.getElementById('usageConversations');
-  const list = r.conversations || [];
-  const sym = r.symbol || '¥';
-  usageConversationsCache = list;
-  if (!list.length) {
-    box.innerHTML = '<div class="empty-state"><strong>还没有用量记录</strong><p>QQ 会话产生一次 LLM 调用后，这里会按群 / 好友列出 token 与花费。新账本从桥接重启后开始记账。</p></div>';
-    return;
-  }
-  const maxCost = Math.max(...list.map(x => Number(x.cost) || 0), 0);
-  let html = '<table><tr><th>会话</th><th>类型</th><th class="num">轮数</th><th class="num">步数</th><th class="num">未命中输入</th><th class="num">命中输入</th><th class="num">命中率</th><th class="num">输出</th><th class="num">花费</th><th>占比</th></tr>';
-  for (const c of list) {
-    const key = String(c.key ?? '');
-    const isInternal = key.startsWith('internal:');
-    const type = isInternal ? '<span class="pill b">内部</span>'
-      : (key.startsWith('private:') ? '<span class="pill b">私聊</span>' : '<span class="pill g">群</span>');
-    const b = c.buckets || {};
-    html += '<tr>'
-      + `<td class="usage-key"><button class="usage-key-button" data-usage-key="${esc(key)}" aria-pressed="${key === usageSelectedKey}">${esc(key)}</button></td>`
-      + `<td>${type}</td>`
-      + `<td class="num">${usageNum(c.turns)}</td>`
-      + `<td class="num">${usageNum(c.steps)}</td>`
-      + `<td class="num">${usageNum(b.cacheMiss)}</td>`
-      + `<td class="num">${usageNum(b.cacheHit)}</td>`
-      + `<td class="num">${usagePct(usageRate(b))}</td>`
-      + `<td class="num">${usageNum(b.output)}</td>`
-      + `<td class="num">${usageMoney(c.cost, sym)}</td>`
-      + `<td>${usageBar(maxCost > 0 ? (Number(c.cost) || 0) / maxCost : 0)}</td>`
-      + '</tr>';
-  }
-  html += '</table>';
-  const totals = r.totals || {};
-  if (Number(totals.unattributedCost) > 0) {
-    html += `<div class="meta" style="padding:8px 10px">其中 ${usageMoney(totals.unattributedCost, sym)} 来自更早的回合：它们只剩累计值（在逐轮快照窗口之外），无法再拆到具体某一轮。</div>`;
-  }
-  if (totals.estimated) {
-    html += '<div class="meta" style="padding:8px 10px">⚠️ 有模型未登记在价目表里，这部分按 <code>deepseek-flash</code> 兜底价估算，可在 <code>config.json</code> 的 <code>pricing.models</code> 补充。</div>';
-  }
-  box.innerHTML = html;
-  box.querySelectorAll('[data-usage-key]').forEach(btn => btn.addEventListener('click', () => {
-    usageSelectedKey = btn.dataset.usageKey;
-    box.querySelectorAll('[data-usage-key]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.usageKey === usageSelectedKey)));
-    const sel = document.getElementById('usageKeySelect');
-    if (sel) sel.value = usageSelectedKey;
-    refreshUsageTurns();
-  }));
-}
-
-function renderUsageTurns(r) {
-  const box = document.getElementById('usageTurns');
-  const scope = document.getElementById('usageTurnScope');
-  const rows = r.turns || [];
-  const sym = r.symbol || '¥';
-  if (scope) {
-    scope.textContent = `${esc(r.key || '')} ｜ 共 ${rows.length} 轮可追溯 ｜ 已归属 ${usageMoney(r.attributedCost, sym)}`
-      + (Number(r.unattributedCost) > 0 ? ` ｜ 未逐轮归属 ${usageMoney(r.unattributedCost, sym)}` : '');
-  }
-  if (!rows.length) {
-    box.innerHTML = '<span class="meta">该会话还没有可追溯的逐轮记录（只有累计值）。</span>';
-    return;
-  }
-  let html = '<table><tr><th class="num">轮次</th><th>结束时间</th><th class="num">步数</th><th class="num">未命中输入</th><th class="num">命中输入</th><th class="num">命中率</th><th class="num">输出</th><th class="num">花费</th><th>时段</th></tr>';
-  for (const t of rows) {
-    const b = t.buckets || {};
-    html += '<tr>'
-      + `<td class="num">#${esc(t.turn)}</td>`
-      + `<td>${esc(usageTime(t.endedAt))}</td>`
-      + `<td class="num">${usageNum(t.steps)}</td>`
-      + `<td class="num">${usageNum(b.cacheMiss)}</td>`
-      + `<td class="num">${usageNum(b.cacheHit)}</td>`
-      + `<td class="num">${usagePct(usageRate(b))}</td>`
-      + `<td class="num">${usageNum(b.output)}</td>`
-      + `<td class="num">${usageMoney(t.cost, sym)}</td>`
-      + `<td>${usageTierTag(t.tier)}</td>`
-      + '</tr>';
-  }
-  box.innerHTML = html + '</table>';
-}
-
-function renderUsageRecent(r) {
-  const box = document.getElementById('usageRecent');
-  const list = r.entries || [];
-  const sym = r.symbol || '¥';
-  if (!list.length) { box.innerHTML = '<span class="meta">（空）</span>'; return; }
-  let html = '<table><tr><th>时间</th><th>会话</th><th class="num">轮</th><th class="num">步</th><th class="num">未命中</th><th class="num">命中</th><th class="num">输出</th><th class="num">花费</th><th>时段</th></tr>';
-  for (const e of list) {
-    html += '<tr>'
-      + `<td>${esc(usageTime(e.time))}</td>`
-      + `<td>${esc(e.key || '未归属')}</td>`
-      + `<td class="num">#${esc(e.turn)}</td>`
-      + `<td class="num">${esc(e.step)}</td>`
-      + `<td class="num">${usageNum(e.cacheMiss)}</td>`
-      + `<td class="num">${usageNum(e.cacheHit)}</td>`
-      + `<td class="num">${usageNum(e.output)}</td>`
-      + `<td class="num">${usageMoney(e.cost, sym)}</td>`
-      + `<td>${usageTierTag(e.tier)}</td>`
-      + '</tr>';
-  }
-  box.innerHTML = html + '</table>';
-}
-
-function renderUsagePrices(pt) {
-  const box = document.getElementById('usagePrices');
-  if (!pt || !pt.models) { box.textContent = '（价目表不可用）'; return; }
-  const sym = pt.symbol || '¥';
-  const tier = pt.nowTier;
-  let html = `<div style="margin-bottom:6px">价目表版本 <code>${esc(pt.version)}</code> ｜ 高峰时段为北京时间的 2 倍价（周一至周五 9:00-12:00、14:00-18:00，法定节假日除外，已内置 ${esc(pt.holidayCount)} 天假期）</div>`;
-  html += '<table><tr><th>模型</th><th class="num">缓存命中</th><th class="num">缓存未命中</th><th class="num">输出</th></tr>';
-  for (const [name, m] of Object.entries(pt.models)) {
-    // 单价与货币符号都可能来自 config.json 的 pricing 覆盖项（运维可写），
-    // 不能直接拼进 innerHTML：这里统一走 esc() （数字原样显示仍然是数字）。
-    const price = (v) => esc(sym + (Number.isFinite(Number(v)) ? Number(v) : (v ?? '')));
-    html += `<tr><td><code>${esc(name)}</code><div class="meta">${esc(m.label)}</div></td>`
-      + `<td class="num">${price(m.off?.cacheHit)}</td>`
-      + `<td class="num">${price(m.off?.cacheMiss)}</td>`
-      + `<td class="num">${price(m.off?.output)}</td></tr>`;
-  }
-  html += '</table>';
-  html += `<div class="meta" style="padding:8px 10px">上表为<b>空闲时段</b>单价（元 / 百万 token）。当前时刻属于 <b>${tier ? esc(tier.tierLabel) : '—'}</b>${tier?.estimated ? '，且价目表里没有 <code>' + esc(tier.model) + '</code>，按兜底价估算' : ''}。</div>`;
-  box.innerHTML = html;
-}
-
-async function refreshUsage() {
-  const msg = document.getElementById('usageMsg');
-  try {
-    const r = await api('/api/tokens/summary?limit=200');
-    const t = r.totals || {};
-    const b = t.buckets || {};
-    const sym = r.symbol || '¥';
-    document.getElementById('metricUsageCost').textContent = usageMoney(t.cost, sym);
-    document.getElementById('metricUsageCostHint').textContent =
-      `高峰 ${usageMoney(t.byTier?.peak, sym)} ｜ 空闲 ${usageMoney(t.byTier?.off, sym)}`;
-    document.getElementById('metricUsageTokens').textContent = usageNum(t.totalTokens);
-    document.getElementById('metricUsageTokensHint').textContent =
-      `输入 ${usageNum(t.inputTokens)} ｜ 输出 ${usageNum(b.output)}`;
-    document.getElementById('metricUsageHitRate').textContent = usagePct(t.cacheHitRate);
-    document.getElementById('metricUsageHitHint').textContent =
-      `命中 ${usageNum(b.cacheHit)} ｜ 未命中 ${usageNum(b.cacheMiss)}`;
-    document.getElementById('metricUsagePerTurn').textContent = usageMoney(t.avgCostPerTurn, sym);
-    document.getElementById('metricUsagePerTurnHint').textContent =
-      `${usageNum(t.turns)} 轮 ｜ ${usageNum(t.steps)} 步 ｜ 当前${r.nowTier?.tier === 'peak' ? '高峰' : '空闲'}时段`;
-    renderUsageConversations(r);
-    renderUsagePrices(r.priceTable ? { ...r.priceTable, nowTier: r.nowTier } : null);
-    syncUsageKeySelect((r.conversations || []).map(c => String(c.key ?? '')));
-    if (!document.getElementById('usageTurns').dataset.loaded && usageSelectedKey) refreshUsageTurns();
-    msg.textContent = `✅ 已同步于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
-    msg.className = 'meta ok';
-  } catch (error) {
-    msg.textContent = `❌ 读取失败：${error?.message || '未知错误'}`;
-    msg.className = 'meta err';
-  }
-}
-
-async function refreshUsageTurns() {
-  const box = document.getElementById('usageTurns');
-  if (!usageSelectedKey) {
-    box.innerHTML = '<span class="meta">选择一个会话后加载逐轮明细…</span>';
-    box.dataset.loaded = '';
-    return;
-  }
-  try {
-    const r = await api('/api/tokens/turns?key=' + encodeURIComponent(usageSelectedKey) + '&limit=200');
-    renderUsageTurns(r);
-    box.dataset.loaded = '1';
-  } catch (error) {
-    box.innerHTML = `<span class="meta err">读取失败：${esc(error?.message || '未知错误')}</span>`;
-    box.dataset.loaded = '';
-  }
-}
-
-async function refreshUsageRecent() {
-  try {
-    renderUsageRecent(await api('/api/tokens/recent?limit=40'));
-  } catch (error) {
-    document.getElementById('usageRecent').innerHTML = '<span class="meta">（读取失败）</span>';
-  }
-}
-
-document.getElementById('usageRefresh').addEventListener('click', () => {
-  refreshUsage();
-  refreshUsageChart();
-  refreshUsageTurns();
-  refreshUsageRecent();
-  showConsoleToast('用量已刷新');
-});
-document.getElementById('usageTurnsLoad').addEventListener('click', () => refreshUsageTurns());
-document.getElementById('usageKeySelect').addEventListener('change', (ev) => {
-  usageSelectedKey = ev.target.value;
-  refreshUsageTurns();
-});
-document.getElementById('usageClear').addEventListener('click', async () => {
-  if (!confirm('确定清空 token 用量账本？累计花费与逐轮明细都会被删除，且不可恢复（下一次同步会从 DSH 重新拉取会话累计值）。')) return;
-  const msg = document.getElementById('usageMsg');
-  try {
-    const r = await api('/api/tokens/reset', 'POST', {});
-    msg.textContent = r.ok ? '✅ 账本已清空' : ('❌ ' + (r.error || '失败'));
-    msg.className = r.ok ? 'meta ok' : 'meta err';
-  } catch (error) {
-    msg.textContent = '❌ ' + (error?.message || '失败');
-    msg.className = 'meta err';
-  }
-  usageSelectedKey = '';
-  document.getElementById('usageTurnScope').textContent = '—';
-  document.getElementById('usageTurns').dataset.loaded = '';
-  refreshUsage();
-  refreshUsageRecent();
-});
-
 setConsolePage(location.hash.slice(1), { updateHash:false });
 
-refresh(); refreshRoles(); refreshWhitelist(); refreshSessions(); refreshPending(); refreshPresets(); loadSocialForm(); loadV2Config(); refreshV2Activity(); loadV2ToolLog(); loadV2SessionOptions(); refreshSocialStatus(); refreshSlang(); loadSlangConfig(); loadSecurity(); refreshSimPrompt(); refreshDshModel(); refreshUsage(); refreshUsageChart(); refreshUsageRecent();
-setInterval(() => { refresh(); refreshSessions(); refreshPending(); refreshSocialStatus(); refreshSlang(); }, 3000);
-// 用量看板只在本页可见时轮询：既保证「实时」，又不让其它页白白多打两份接口。
-setInterval(() => { if (currentConsolePage !== 'usage') return; refreshUsage(); refreshUsageChart(); refreshUsageRecent(); }, 3000);
+refresh(); refreshWhitelist(); loadV2Config(); refreshV2Activity(); loadV2ToolLog(); loadV2SessionOptions(); loadSecurity();
+setInterval(() => { refresh(); }, 3000);
 // 主题切换（纯前端，不发任何请求；选择写入 localStorage，未选择时跟随系统）
 (function () {
   var root = document.documentElement;

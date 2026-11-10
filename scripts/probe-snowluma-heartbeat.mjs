@@ -11,7 +11,7 @@ import { SnowLumaWebSocketClient } from '@snowluma/sdk';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { discoverSnowLumaConnection } from '../src/snowluma-conn.js';
+import { discoverSnowLumaConnection } from '../src/integrations/snowluma-conn.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));

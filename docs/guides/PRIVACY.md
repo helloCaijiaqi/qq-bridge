@@ -90,6 +90,6 @@ CI 上只扫**已跟踪**文件（未跟踪文件在干净 checkout 里不存在
 | `src/bridge.js` | `accessToken` 键名（配置读取处，无真实值） | 误报：键名不是值；已在规则里区分"有实际值" |
 | `docs/guides/PROJECT_GUIDE.md`、`docs/guides/VOICE.md` | 真实 QQ 号/群号、`C:\Users\<名字>`、`D:\<工作盘>` | **不带进新仓库**（旧项目的实现说明，已被 `QSH_PLAN.md` 取代） |
 | `docs/audits/*`、`docs/design/*`、`docs/research/*`、`docs/legacy/*` | 本机路径、真实 QQ 号 | 同上：**不带进新仓库**；只把 `AUDIT_FIXES` 与 `SECURITY_BASELINE` 带走（这两份已确认只含占位符） |
-| `scripts/test-*`、`scripts/console-ui-*`、`src/sensitive.js`、`config.example.json` | 刻意构造的假 ID / 假凭据 / 占位符 | 误报：已在 `allowPaths` 白名单里 |
+| `scripts/test-*`、`scripts/console-ui-*`、`src/chat/sensitive.js`、`config.example.json` | 刻意构造的假 ID / 假凭据 / 占位符 | 误报：已在 `allowPaths` 白名单里 |
 
 **结论**：真正必须在**代码**里改掉的只有 `public/console.html` 的群号；其余全部靠"不带进新仓库"解决。

@@ -6,7 +6,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { EventEmitter } from 'node:events';
 import { PassThrough } from 'node:stream';
-import { SENSITIVE_RE } from '../src/sensitive.js';
+import { SENSITIVE_RE } from '../src/chat/sensitive.js';
 
 const lookupCalls = [];
 const originalLookup = dns.promises.lookup;
@@ -23,7 +23,7 @@ dns.promises.lookup = async (host) => {
   throw new Error(`Unexpected DNS lookup in offline test: ${host}`);
 };
 let fetchModule;
-try { fetchModule = await import('../src/safe-fetch.js'); }
+try { fetchModule = await import('../src/media/safe-fetch.js'); }
 finally { dns.promises.lookup = originalLookup; }
 const { isPrivateIp, safeFetch, safeFetchBuffer, validateFetchUrl } = fetchModule;
 

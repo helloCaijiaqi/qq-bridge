@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import {
   describeAudio, formatBytes, formatDuration, inspectAudio, listAudioFiles,
   parseTargetKey, resolveAudioSource
-} from '../src/send-voice-lib.js';
+} from '../src/media/send-voice-lib.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');

@@ -11,7 +11,6 @@ async function fixture(run, cfg = {}) {
     proactive: { enabled: false }, sticker: { enabled: false },
     ...cfg,
   } } });
-  h.setMode('reserved2');
   const key = 'group:456';
   const st = h.getSocialV2State(key);
   const server = h.startConsoleServer();
@@ -135,7 +134,7 @@ test('ordinary and omitted purpose keep waiting for future messages', () => fixt
 
 test('reply mode rejects a session permission change during its remaining quiet window', () => fixture(async ({ h, st, request, append }) => {
   append('still fresh');
-  const timer = setTimeout(() => h.setMode('chat'), 100);
+  const timer = setTimeout(() => { h.cfg.allow.groups = []; }, 100);
   try {
     const result = await request('wait', { purpose: 'reply', timeoutMs: 1000, quietMs: 300 });
     assert.equal(result.status, 403);

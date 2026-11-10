@@ -43,7 +43,7 @@ for (const [rel, toolRel] of [['..\\voice-tool\\voice-gui.mjs', 'voice-gui.mjs']
   if (hasVoiceTool()) ok(fs.existsSync(voiceToolPath(toolRel)), rel);
   else skipVoiceTool(`入口 ${rel}`);
 }
-for (const rel of ['src/voice-core.js', 'src/send-voice-lib.js',
+for (const rel of ['src/media/voice-core.js', 'src/media/send-voice-lib.js',
   'scripts/send-voice.mjs', 'scripts/test-voice.mjs', 'scripts/test-voice-gui.mjs',
   'scripts/test-encoding.mjs', 'scripts/test-console-static.mjs']) {
   ok(exists(rel), rel);
@@ -53,8 +53,8 @@ console.log('## 模块依赖解析');
 {
   // 每个 entry 都能独立 import（语法 + 相对路径 + 符号都存在）
   const checks = [
-    ['src/voice-core.js', 'voice-core'],
-    ['src/send-voice-lib.js', 'send-voice-lib（薄转发）'],
+    ['src/media/voice-core.js', 'voice-core'],
+    ['src/media/send-voice-lib.js', 'send-voice-lib（薄转发）'],
   ];
   for (const [rel, label] of checks) {
     try {
@@ -62,14 +62,14 @@ console.log('## 模块依赖解析');
       ok(Object.keys(m).length > 5, `${label} 可 import`, `${Object.keys(m).length} 个导出`);
     } catch (e) { ok(false, `${label} 可 import`, e.message); }
   }
-  const core = await import(pathToFileURL(path.join(ROOT, 'src/voice-core.js')).href);
-  const shim = await import(pathToFileURL(path.join(ROOT, 'src/send-voice-lib.js')).href);
+  const core = await import(pathToFileURL(path.join(ROOT, 'src/media/voice-core.js')).href);
+  const shim = await import(pathToFileURL(path.join(ROOT, 'src/media/send-voice-lib.js')).href);
   const coreKeys = Object.keys(core).sort();
   const shimKeys = Object.keys(shim).sort();
   ok(coreKeys.every((k) => shimKeys.includes(k)), 'shim 覆盖 voice-core 全部导出',
     shimKeys.length >= coreKeys.length ? `${shimKeys.length} 个` : `core=${coreKeys.length} shim=${shimKeys.length}`);
   // shim 必须是转发而不是实现（防止两份实现again 漂移）
-  const shimSrc = read('src/send-voice-lib.js');
+  const shimSrc = read('src/media/send-voice-lib.js');
   ok(/export\s*\{[\s\S]*\}\s*from\s*'\.\/voice-core\.js'/.test(shimSrc), 'send-voice-lib.js 是纯转发（无独立实现）');
   ok(!/function\s+\w+\s*\(/.test(shimSrc), 'send-voice-lib.js 里没有函数实现');
 }
@@ -90,7 +90,7 @@ if (!hasVoiceTool()) {
 
 console.log('## 各入口 import 的符号都真实存在');
 {
-  const core = await import(pathToFileURL(path.join(ROOT, 'src/voice-core.js')).href);
+  const core = await import(pathToFileURL(path.join(ROOT, 'src/media/voice-core.js')).href);
   // 桥接侧入口用 ROOT 相对路径；独立工具入口在 voice-tool/（经 ../qq-bridge/src/ 引共享内核）
   const entries = [
     { base: voiceToolDir(), rel: 'voice-gui.mjs', tool: true },
@@ -125,7 +125,6 @@ console.log('## qq-bridge 语音系统：路由与开关');
   ok(/voiceBudgetCheck/.test(bridge) && /voiceBudgetCommit/.test(bridge), '语音额度：检查与记账分离');
   ok(/assertOutboundAuditOk/.test(bridge), '语音文件名审计存在');
   ok(/verifyVoiceMessageSent/.test(bridge), '发送后回读校验存在');
-  ok(/shouldBlockSilentReply\(key\)/.test(bridge), 'AI 语音尊重静默模式');
   ok(/allowAbsolutePath/.test(bridge), 'AI 绝对路径受配置约束');
   // 操作者通道不应被 AI 开关挡住（否则默认关闭时你自己也发不了）
   const opSection = bridge.slice(bridge.indexOf("url.pathname === '/api/voice/send' || url.pathname === '/api/send/voice'"), bridge.indexOf("'/api/socialV2/send-voice'"));
@@ -134,15 +133,11 @@ console.log('## qq-bridge 语音系统：路由与开关');
   ok(/if \(!voice\.enabled\)/.test(agentSection), 'AI 通道受 voice.enabled 挡住');
 }
 
-console.log('## qq-bridge 语音系统：MCP 工具与开关映射');
+console.log('## qq-bridge 语音系统：开关映射');
 {
-  const mcp = read('src/mcp-snowluma-safe.js');
-  ok(mcp.includes("'qq_send_voice'"), '注册 qq_send_voice');
-  ok(mcp.includes("'qq_list_voices'"), '注册 qq_list_voices');
-  ok(/qq_send_voice: 'sendVoice'/.test(mcp) && /qq_list_voices: 'sendVoice'/.test(mcp), '两个工具都受 sendVoice 开关控制');
-  ok(/voice\?\.enabled !== false/.test(mcp), '注册期也检查 voice.enabled（关闭时不注册，省 token）');
+
   const bridge = read('src/bridge.js');
-  ok(/sendVoice: 'qq_send_voice \/ qq_list_voices'/.test(bridge), 'qq_get_prompt 的 toolMap 含语音工具');
+  ok(/sendVoice: 'chat_qq_send_voice \/ chat_qq_list_voices'/.test(bridge), 'qq_get_prompt 的 toolMap 含语音工具（chat_qq_* 主名）');
   ok(/'sendVoice'\]/.test(bridge), 'config API 的 toolFlags 含 sendVoice');
   const ex = JSON.parse(read('config.example.json'));
   // 这一段查的是**「出厂默认就该是关的」**这类契约 —— 权威声明是随仓库发布的
@@ -163,19 +158,12 @@ console.log('## qq-bridge 语音系统：MCP 工具与开关映射');
   }
 }
 
-console.log('## qq-bridge 语音系统：控制台与 preset');
+console.log('## qq-bridge 语音系统：控制台');
 {
   const html = read('public/console.html');
   ok(html.includes('data-v2-tool="sendVoice"'), '控制台有 sendVoice 工具开关');
   ok(html.includes('id="voiceList"') && html.includes('id="voiceSendBtn"'), '控制台有语音库调试面板');
   ok(/api\/voice\/list/.test(html) && /api\/voice\/send/.test(html), '面板调用操作者端点');
-  const preset = read(path.join('dsh', 'agent-presets', 'qq-chat-v2', 'agent.cordis.yml'));
-  ok(preset.includes('qq_send_voice') && preset.includes('qq_list_voices'), 'qq-chat-v2 人设描述语音能力');
-  ok(/语音\*\*默认是关闭的\*\*/.test(preset), '人设说明默认关闭');
-  // DSH 0.1.7 起守卫的权威实现只有一份，在 qq-agent-presets bundle 里
-  // （dsh/agent-presets/<preset>/qq-tool-restrict.mjs 只是 re-export 壳）。
-  ok(read(path.join('plugins', 'qq-agent-presets', 'qq-tool-restrict.mjs')).includes("'mcp__snowluma__'"),
-    'preset 白名单前缀放行语音工具');
 }
 
 console.log('## 文档');

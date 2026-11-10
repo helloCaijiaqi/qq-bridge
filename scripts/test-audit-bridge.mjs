@@ -9,73 +9,11 @@ async function test(name, run) {
   catch (error) { failures++; console.error('FAIL', name, error.message); }
   finally { await h.close(); }
 }
-await test('closed-agent session is not reused after switching to chat', async (h) => {
-  h.setMode('closed-agent');
-  const privileged = await h.ensureSession('private:123');
-  h.setMode('chat');
-  const restricted = await h.ensureSession('private:123');
-  assert.notEqual(restricted, privileged);
-  assert.equal(h.calls.created.at(-1).agentPreset, 'qq-chat');
-  assert.ok(h.calls.cancelled.includes(privileged));
-});
-await test('unavailable preset catalogue fails closed for QQ and learner sessions', async (h) => {
-  h.setPresets([]);
-  assert.equal(h.resolvePresetName('missing', { strict: true }), '');
-  await assert.rejects(h.ensureSession('group:456'));
-  await assert.rejects(h.ensureSlangLearnerSession());
-  assert.equal(h.calls.created.length, 0);
-});
-await test('session creation crossing a mode change never accepts stale permissions', async (h) => {
-  h.setMode('closed-agent');
-  let release;
-  const original = h.api.sessions.create;
-  h.api.sessions.create = async (params) => {
-    const result = await original(params);
-    await new Promise((resolve) => { release = resolve; });
-    return result;
-  };
-  const pending = h.ensureSession('private:123');
-  while (!release) await new Promise((resolve) => setImmediate(resolve));
-  h.setMode('chat');
-  release();
-  await assert.rejects(pending);
-  assert.equal(h.state.sessions['private:123'], undefined);
-});
 await test('queued send rechecks allowlist at actual transport time', async (h) => {
   const sending = h.sendToQQ('group:456', 'fixture');
   h.cfg.allow.groups = [];
   await sending;
   assert.equal(h.calls.sent.length, 0);
-});
-await test('old prompt completion cannot delete replacement queue after reset', async (h) => {
-  const release = [];
-  h.api.sessions.prompt = async () => {
-    await new Promise((resolve) => release.push(resolve));
-    return { result: { ok: true, value: {} } };
-  };
-  const first = h.deliverPrompt('group:456', 'first');
-  while (release.length < 1) await new Promise((resolve) => setImmediate(resolve));
-  h.drainPromptQueue('group:456', 'reset');
-  const second = h.deliverPrompt('group:456', 'second');
-  while (release.length < 2) await new Promise((resolve) => setImmediate(resolve));
-  const replacement = h.promptQueues.get('group:456');
-  release[0](); await first;
-  assert.equal(h.promptQueues.get('group:456'), replacement);
-  release[1](); await second;
-});
-await test('same-policy sessions are reused but legacy unlabelled sessions are replaced', async (h) => {
-  const first = await h.ensureSession('private:123');
-  assert.equal(await h.ensureSession('private:123'), first);
-  delete h.state.sessionPolicies['private:123'];
-  assert.notEqual(await h.ensureSession('private:123'), first);
-});
-await test('reset during model selection cannot return a detached session', async (h) => {
-  h.api.sessions.selectModel = async () => {
-    h.resetEpoch();
-    return { result: { ok: true, value: { selected: {} } } };
-  };
-  await assert.rejects(h.ensureSession('private:123'));
-  assert.equal(h.state.sessions['private:123'], undefined);
 });
 await test('malformed HTTP request targets return 400 without hanging', async (h) => {
   const server = h.startConsoleServer();
@@ -92,32 +30,6 @@ await test('malformed HTTP request targets return 400 without hanging', async (h
     assert.equal(status, 400);
   } finally { await new Promise((resolve) => server.close(resolve)); }
 });
-{ // 控制台重置路径必须与 retireSession 一样：清掉权限元数据并终止 DSH 侧排队的工作。
-  const h = await bridgeHarness();
-  const server = h.startConsoleServer();
-  try {
-    if (!server.listening) await new Promise((resolve) => server.once('listening', resolve));
-    const sessionId = await h.ensureSession('private:123');
-    assert.ok(h.state.sessionPolicies['private:123'], 'policy should exist before reset');
-    h.calls.cancelled.length = 0;
-    const status = await new Promise((resolve, reject) => {
-      const request = http.request({ host: '127.0.0.1', port: server.address().port, path: '/api/session/reset?token=fixture-console-token', method: 'POST',
-        headers: { 'content-type': 'application/json' } }, (response) => {
-        response.resume();
-        response.on('end', () => resolve(response.statusCode));
-      });
-      request.on('error', reject);
-      request.setTimeout(3000, () => request.destroy(new Error('reset request hung')));
-      request.end(JSON.stringify({ key: 'private:123' }));
-    });
-    assert.equal(status, 200);
-    assert.equal(h.state.sessions['private:123'], undefined);
-    assert.equal(h.state.sessionPolicies['private:123'], undefined, 'policy must not be orphaned by reset');
-    assert.ok(h.calls.cancelled.includes(sessionId), 'reset must stop the retired DSH session');
-    console.log('PASS console reset drops the session policy and stops the retired DSH session');
-  } catch (error) { failures++; console.error('FAIL console reset cleanup:', error.message); }
-  finally { await new Promise((resolve) => server.close(resolve)); await h.close(); }
-}
 {
   const image = Buffer.from('89504e470d0a1a0a00000000', 'hex');
   let body;
@@ -356,21 +268,20 @@ await test('malformed HTTP request targets return 400 without hanging', async (h
     const adminOnly = { 'x-console-token': 'fixture-console-token' };
     const asAgent = { ...adminOnly, 'x-agent-token': 'fixture-agent-token' };
     const mustDeny = [
-      ['GET', '/api/roles'], ['GET', '/api/roles/content?name=x'], ['GET', '/api/roles?x=1'],
-      ['POST', '/api/roles/create'], ['POST', '/api/roles/update'],
-      ['POST', '/api/roles/rename'], ['POST', '/api/roles/delete'],
-      ['GET', '/api/preset/sim-prompt'], ['POST', '/api/preset/sim-prompt'],
-      ['GET', '/api/preset/sim-prompt/backups'], ['POST', '/api/preset/sim-prompt/restore'],
-      ['GET', '/api/dsh/model'], ['POST', '/api/dsh/effort'],
       ['GET', '/api/whitelist'], ['POST', '/api/whitelist'], ['POST', '/api/restart'],
-      ['POST', '/api/console/token'], ['GET', '/api/role'], ['POST', '/api/role'],
+      ['POST', '/api/console/token'],
     ];
     for (const [method, path] of mustDeny) {
       const res = await call(path, method, asAgent, method === 'POST' ? {} : undefined);
       assert.equal(res.status, 403, `${method} ${path} 必须对 agent token 拒绝，实际 HTTP ${res.status}`);
     }
+    // 角色卡/人格管理整块已删：这些路径一律 404，绝不复活成 200。
+    for (const path of ['/api/roles', '/api/role', '/api/role-mode', '/api/roles/create', '/api/tokens/summary']) {
+      const res = await call(path, 'GET', adminOnly);
+      assert.notEqual(res.status, 200, `${path} 已随能力删除，不得复活（实际 HTTP ${res.status}）`);
+    }
     // 绕过尝试：路径穿越与重复斜杠在 URL 解析后仍需被拒
-    for (const path of ['/api/roles/../roles', '/api//roles', '/api/./roles', '/api/roles/']) {
+    for (const path of ['/api/whitelist/../whitelist', '/api//whitelist', '/api/./whitelist']) {
       const res = await call(path, 'GET', asAgent);
       assert.notEqual(res.status, 200, `${path} 不得绕过 agent token 限制（实际 HTTP ${res.status}）`);
     }
@@ -378,9 +289,9 @@ await test('malformed HTTP request targets return 400 without hanging', async (h
     const allowed = await call('/api/status', 'GET', asAgent);
     assert.equal(allowed.status, 200, '/api/status 应对 agent token 放行');
     // 同一批管理端点，管理员（仅控制台令牌）应可正常访问
-    const adminOk = await call('/api/dsh/model', 'GET', adminOnly);
-    assert.equal(adminOk.status, 200, '管理员应能访问 /api/dsh/model');
-    console.log('PASS agent token cannot reach persona/prompt/effort/whitelist admin endpoints');
+    const adminOk = await call('/api/whitelist', 'GET', adminOnly);
+    assert.equal(adminOk.status, 200, '管理员应能访问 /api/whitelist');
+    console.log('PASS agent token cannot reach prompt/whitelist admin endpoints');
   } catch (error) { failures++; console.error('FAIL agent token admin isolation:', error.message); }
   finally { await new Promise((resolve) => server.close(resolve)); await h.close(); }
 }
@@ -398,7 +309,7 @@ await test('malformed HTTP request targets return 400 without hanging', async (h
         (response) => {
           let data = '';
           response.on('data', (chunk) => { data += chunk; });
-          response.on('end', () => resolve({ status: response.statusCode, body: data }));
+          response.on('end', () => resolve({ status: response.statusCode, body: data, headers: response.headers }));
         },
       );
       request.on('error', reject);
@@ -420,14 +331,27 @@ await test('malformed HTTP request targets return 400 without hanging', async (h
     }
 
     // ② 令牌比较必须是定长：错长度/错内容的令牌都不得通过（不能因为"前缀对"就放行）。
-    // 注意 Node 的 HTTP 客户端会自动裁掉自定义头的首尾空白，所以"带尾空格"这一类
-    // 必须用 ?token= 传（控制台本来就接受这种入口，它才是真实的攻击面）。
-    for (const token of ['fixture-console-token-x', 'fixture-console-toke', 'FIXTURE-CONSOLE-TOKEN', 'fixture-console-token ']) {
-      const res = await call(`/api/status?token=${encodeURIComponent(token)}`, 'GET');
+    for (const token of ['fixture-console-token-x', 'fixture-console-toke', 'FIXTURE-CONSOLE-TOKEN']) {
+      const res = await call('/api/status', 'GET', { 'x-console-token': token });
       assert.equal(res.status, 401, `令牌「${token}」不得通过鉴权，实际 HTTP ${res.status}`);
     }
+    // 查询串令牌只允许 GET / 的首次引导：API 带 ?token= 必须 401（否则令牌会留在
+    // 浏览器历史 / Referer / 反代日志里）。
+    const queryToken = await call(`/api/status?token=${encodeURIComponent('fixture-console-token')}`, 'GET');
+    assert.equal(queryToken.status, 401, '查询串令牌不得用于 API 调用');
     const noHeader = await call('/api/status', 'GET');
     assert.equal(noHeader.status, 401, '不带令牌必须被拒绝');
+
+    // ②b 首次引导：GET /?token= → 303 + HttpOnly Cookie + 干净地址；之后靠 Cookie 鉴权。
+    const boot = await call(`/?token=${encodeURIComponent('fixture-console-token')}`, 'GET');
+    assert.equal(boot.status, 303, '带令牌的根路径应 303 到干净 URL');
+    assert.equal(boot.headers.location, '/');
+    const setCookie = String(boot.headers['set-cookie'] ?? '');
+    assert.match(setCookie, /qqb_console=/);
+    assert.match(setCookie, /HttpOnly/i);
+    assert.doesNotMatch(boot.body, /fixture-console-token/, '响应体不得回显令牌');
+    const withCookie = await call('/api/status', 'GET', { cookie: setCookie.split(';')[0] });
+    assert.equal(withCookie.status, 200, '引导后用 Cookie 应能访问控制台 API');
 
     // ③ /api/authorize/read 不再接受空令牌（它曾对 agent 流量开放 ⇒ 成为免鉴权入口）。
     const noToken = await call('/api/authorize/read', 'POST', { ...admin, 'x-agent-token': 'x' }, { key: 'group:456' });

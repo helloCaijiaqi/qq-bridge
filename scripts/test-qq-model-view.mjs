@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { compactModelMessage, compactModelData, serializeModelData } from '../src/qq-model-view.js';
+import { compactModelMessage, compactModelData, serializeModelData } from '../src/chat/qq-model-view.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const shortMessage = {
@@ -133,114 +130,3 @@ test('synthetic payload size comparison (characters, not measured token usage)',
   console.log(`Synthetic 40-message payload: ${before} -> ${after} characters (${(after / before * 100).toFixed(1)}% remaining); minified-only=${minifiedOnly}. This is not a billing/token benchmark.`);
 });
 
-test('MCP validates/forwards read watermarks and wait purposes against an isolated local API', async () => {
-  const requests = [];
-  const api = http.createServer(async (req, res) => {
-    let raw = '';
-    for await (const chunk of req) raw += chunk;
-    requests.push({ url: req.url, body: raw ? JSON.parse(raw) : null, token: req.headers['x-agent-token'] });
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, readThroughSeq: 21, messages: [shortMessage], accepted: raw ? JSON.parse(raw) : null }));
-  });
-  await new Promise((resolve, reject) => {
-    api.once('error', reject);
-    api.listen(0, '127.0.0.1', resolve);
-  });
-  let fixture;
-  let client;
-  try {
-    // Descendant modules resolve the project's dependencies; no credentials,
-    // live config or user runtime state are copied into this test fixture.
-    fixture = await fs.mkdtemp(path.join(ROOT, '.tmp-model-view-test-'));
-    await fs.mkdir(path.join(fixture, 'src'));
-    await Promise.all(['mcp-snowluma-safe.js', 'qq-model-view.js', 'sensitive.js'].map((name) =>
-      fs.copyFile(path.join(ROOT, 'src', name), path.join(fixture, 'src', name))));
-    await fs.writeFile(path.join(fixture, 'config.json'), JSON.stringify({ consolePort: api.address().port }));
-    const transport = new StdioClientTransport({
-      command: process.execPath,
-      args: [path.join(fixture, 'src', 'mcp-snowluma-safe.js')], cwd: fixture, stderr: 'pipe'
-    });
-    client = new Client({ name: 'qq-model-view-test', version: '1.0.0' });
-    await client.connect(transport);
-    const listed = await client.listTools();
-    for (const name of ['qq_mark_read', 'qq_set_wake_config']) {
-      const schema = listed.tools.find((tool) => tool.name === name).inputSchema;
-      assert.equal(schema.properties.throughSeq.type, 'integer');
-      assert.equal(schema.properties.throughSeq.minimum, 0);
-      assert.equal(schema.properties.throughSeq.maximum, Number.MAX_SAFE_INTEGER);
-      assert.equal(schema.required.includes('throughSeq'), false);
-    }
-    const waitSchema = listed.tools.find((tool) => tool.name === 'qq_wait_for_messages').inputSchema;
-    assert.deepEqual(waitSchema.properties.purpose.enum, ['messages', 'reply']);
-    assert.equal(waitSchema.required.includes('purpose'), false);
-    const common = { key: 'group:123', token: 'fixture-token' };
-    const read = await client.callTool({ name: 'qq_get_unread_messages', arguments: common });
-    const readText = read.content.find((part) => part.type === 'text').text;
-    const data = JSON.parse(readText);
-    assert.equal(data.readThroughSeq, 21);
-    assert.equal('plain' in data.messages[0], false);
-    assert.equal(readText, JSON.stringify(data));
-
-    await client.callTool({ name: 'qq_get_unread_messages', arguments: { ...common, afterSeq: 0, limit: 100 } });
-    assert.equal(new URL(requests.at(-1).url, 'http://fixture').searchParams.get('afterSeq'), '0');
-    await client.callTool({ name: 'qq_get_unread_messages', arguments: { ...common, afterSeq: 21 } });
-    assert.equal(new URL(requests.at(-1).url, 'http://fixture').searchParams.get('afterSeq'), '21');
-    for (const afterSeq of [-1, 1.5, '21', Number.MAX_SAFE_INTEGER + 1]) {
-      const before = requests.length;
-      const invalid = await client.callTool({ name: 'qq_get_unread_messages', arguments: { ...common, afterSeq } });
-      assert.equal(invalid.isError, true);
-      assert.equal(requests.length, before);
-    }
-
-    // Omission preserves the old wait contract, while reply explicitly selects
-    // the short pre-reply quiet window. Both travel through the real MCP schema.
-    await client.callTool({ name: 'qq_wait_for_messages', arguments: common });
-    assert.equal(requests.at(-1).url, '/api/socialV2/wait');
-    assert.deepEqual(requests.at(-1).body, { key: common.key });
-    assert.equal(requests.at(-1).token, common.token);
-    for (const purpose of ['messages', 'reply']) {
-      await client.callTool({ name: 'qq_wait_for_messages', arguments: {
-        ...common, purpose, timeoutMs: 30000, quietMs: 10000, minNewMessages: 1
-      } });
-      assert.deepEqual(requests.at(-1).body, {
-        key: common.key, purpose, timeoutMs: 30000, minNewMessages: 1, quietMs: 10000
-      });
-    }
-    for (const purpose of ['sleep', '', 1, null]) {
-      const before = requests.length;
-      const invalid = await client.callTool({ name: 'qq_wait_for_messages', arguments: { ...common, purpose } });
-      assert.equal(invalid.isError, true);
-      assert.equal(requests.length, before, `invalid wait purpose ${purpose} must not reach the API`);
-    }
-
-    await client.callTool({ name: 'qq_mark_read', arguments: { ...common, throughSeq: 21 } });
-    assert.equal(requests.at(-1).url, '/api/socialV2/mark-read');
-    assert.deepEqual(requests.at(-1).body, { key: common.key, throughSeq: 21 });
-    assert.equal(requests.at(-1).token, common.token);
-
-    await client.callTool({ name: 'qq_set_wake_config', arguments: { ...common, config: { mode: 'diving' }, throughSeq: 0 } });
-    assert.equal(requests.at(-1).url, '/api/socialV2/wake-config');
-    assert.deepEqual(requests.at(-1).body, { key: common.key, config: { mode: 'diving' }, throughSeq: 0 });
-    await client.callTool({ name: 'qq_set_wake_config', arguments: { ...common, config: { mode: 'active' } } });
-    assert.deepEqual(requests.at(-1).body, { key: common.key, config: { mode: 'active' } });
-
-    for (const value of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, '21']) {
-      const before = requests.length;
-      for (const name of ['qq_mark_read', 'qq_set_wake_config']) {
-        const invalid = await client.callTool({ name, arguments: { ...common, throughSeq: value, ...(name === 'qq_set_wake_config' ? { config: {} } : {}) } });
-        assert.equal(invalid.isError, true);
-      }
-      assert.equal(requests.length, before, `invalid throughSeq ${value} must not reach the API`);
-    }
-  } finally {
-    if (client) await client.close();
-    api.closeAllConnections();
-    await new Promise((resolve) => api.close(resolve));
-    if (fixture) {
-      const resolved = path.resolve(fixture);
-      assert.equal(path.dirname(resolved), ROOT);
-      assert.ok(path.basename(resolved).startsWith('.tmp-model-view-test-'));
-      await fs.rm(resolved, { recursive: true, force: true });
-    }
-  }
-});

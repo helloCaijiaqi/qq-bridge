@@ -102,40 +102,10 @@ await test('保存后可读回、key 归一化，并在重启后从文件恢复'
   } finally { await h2.close(); }
 });
 
-// ── 2. 只在首次唤醒注入，且不串会话 ───────────────────────────────────────────
-await test('初始提示词只出现在 bootstrap 唤醒，且只给配置的那个会话', async () => {
-  const h = await bridgeHarness();
-  try {
-    const r = h.setInitialPrompt('group:456', ENV_TEXT);
-    assert.equal(r.ok, true);
-
-    const bootstrap = h.buildWakePromptV2('group:456', 'bootstrap');
-    assert.ok(bootstrap.includes(ENV_TEXT), 'bootstrap 唤醒必须带操作者预写的环境说明');
-    assert.ok(bootstrap.includes('群聊环境'), '注入段要有可识别的标题');
-    assert.ok(bootstrap.includes('仅本次首次唤醒参考'), '注入段要说明只在首次唤醒参考');
-    assert.ok(bootstrap.includes('不是群友发的消息'), '要告诉 AI 这不是群友发言（防提示注入误读）');
-
-    for (const reason of ['question', 'atMention', 'timeout', 'replyCheck', 'proactiveCheck', 'poke', 'admin', 'keyword:小鲸鱼']) {
-      assert.ok(!h.buildWakePromptV2('group:456', reason).includes(ENV_TEXT), `${reason} 唤醒不得重复注入初始提示词`);
-    }
-    assert.ok(!h.buildWakePromptV2('group:999', 'bootstrap').includes(ENV_TEXT), '不得串到别的会话');
-
-    // 私聊用「私聊环境」标签，方便 AI 分清群里还是私聊
-    h.setInitialPrompt('private:123', '这是管理员私聊，直接说结论即可。');
-    const priv = h.buildWakePromptV2('private:123', 'bootstrap');
-    assert.ok(priv.includes('私聊环境') && priv.includes('这是管理员私聊'));
-
-    // 删除后不再注入
-    assert.equal(h.setInitialPrompt('group:456', '').deleted, true);
-    assert.ok(!h.buildWakePromptV2('group:456', 'bootstrap').includes(ENV_TEXT), '删除后 bootstrap 不得再注入');
-  } finally { await h.close(); }
-});
-
 // ── 3. 管理面隔离：AI（agent token）读不到也改不了 ────────────────────────────
 await test('agent token 既读不到初始提示词，也改不了它', async () => {
   const h = await bridgeHarness();
   try {
-    h.setMode('reserved2');
     h.setInitialPrompt('group:456', ENV_TEXT);
     await withServer(h, async (port) => {
       const asAgent = { ...ADMIN, 'x-agent-token': 'fixture-agent-token', 'x-agent-call': '1' };
@@ -229,7 +199,6 @@ await test('initial-prompts.json 损坏时降级为只读，保存失败且原�
 await test('手动唤醒在会话未 bootstrap 时必须走 bootstrap（否则初始提示词永远发不出去）', async () => {
   const h = await bridgeHarness();
   try {
-    h.setMode('reserved2');
     h.setInitialPrompt('group:456', ENV_TEXT);
     await withServer(h, async (port) => {
       const first = await call(port, '/api/socialV2/wake', { method: 'POST', headers: ADMIN, body: { key: 'group:456', reason: 'admin' } });
@@ -243,21 +212,24 @@ await test('手动唤醒在会话未 bootstrap 时必须走 bootstrap（否则�
       assert.equal(second.json.reason, 'admin', '已 bootstrap 过则保持原原因');
       assert.equal(second.json.firstWake, false);
     });
-    // 真正投递出去的 prompt 里必须带初始提示词（content 是 [{type:'text', text}]）
-    for (let i = 0; i < 50 && !h.calls.prompts.length; i += 1) await new Promise((resolve) => setImmediate(resolve));
-    assert.ok(h.calls.prompts.length >= 1, 'bootstrap 必须真的投递一次 prompt');
-    const delivered = h.calls.prompts
-      .map((p) => (Array.isArray(p.content) ? p.content.map((c) => String(c?.text ?? '')).join('\n') : String(p.text ?? p.prompt ?? '')))
-      .join('\n---\n');
-    assert.ok(delivered.includes(ENV_TEXT), 'bootstrap 投递给 DSH 的 prompt 必须包含环境说明');
+    // bootstrap 唤醒的信封快照里必须带操作者环境说明（prompt 正文由网关合成）
+    for (let i = 0; i < 50 && !h.calls.http.some((c) => String(c.url).endsWith('/v1/inbound')); i += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const envelopes = h.calls.http.filter((c) => String(c.url).endsWith('/v1/inbound')).map((c) => c.body);
+    assert.ok(envelopes.length >= 1, 'bootstrap 必须真的投递一次唤醒信封');
+    const snapText = envelopes.map((e) => JSON.stringify(e?.snapshot ?? [])).join('\n---\n');
+    for (const part of ENV_TEXT.split('\n')) {
+      assert.ok(snapText.includes(part), `bootstrap 唤醒信封的快照必须包含操作者环境说明（缺：「${part.slice(0, 20)}」）`);
+    }
+    assert.ok(snapText.includes('操作者预设'), '环境说明必须以「操作者预设」身份出现（不是群友消息）');
   } finally { await h.close(); }
 });
 
-// ── 8. 端到端：真实进线消息 → bootstrap 唤醒 → 投递的 prompt 带环境说明 ────────
-await test('端到端：群消息进线触发的首次唤醒，投递给 DSH 的 prompt 带初始提示词', async () => {
+// ── 8. 端到端：真实进线消息 → bootstrap 唤醒 → 信封快照带环境说明 ──────────────
+await test('端到端：群消息进线触发的首次唤醒，信封快照带初始提示词', async () => {
   const h = await bridgeHarness({ config: { socialV2: { wake: { batchWindowMs: 1000 } } } });
   try {
-    h.setMode('reserved2');
     h.setInitialPrompt('group:456', ENV_TEXT);
     const event = {
       self_id: 999,
@@ -268,19 +240,23 @@ await test('端到端：群消息进线触发的首次唤醒，投递给 DSH 的
       sender: { nickname: '测试群友', card: '测试群友' }
     };
     await h.handleIncoming('group', '456', event, h.cfg);
-    for (let i = 0; i < 100 && !h.calls.prompts.length; i += 1) await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.equal(h.calls.prompts.length, 1, '首条消息应触发恰好一次 bootstrap 唤醒');
-    const delivered = h.calls.prompts[0].content.map((c) => String(c?.text ?? '')).join('\n');
-    assert.ok(delivered.includes('【引导唤醒】'), '首次唤醒走的是 bootstrap 文案');
-    assert.ok(delivered.includes(ENV_TEXT), 'bootstrap prompt 必须带操作者预写的环境说明');
+    const inbounds = () => h.calls.http.filter((c) => String(c.url).endsWith('/v1/inbound')).map((c) => c.body);
+    for (let i = 0; i < 100 && !inbounds().length; i += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+    const first = inbounds();
+    assert.equal(first.length, 1, '首条消息应触发恰好一次 bootstrap 唤醒');
+    const snap1 = JSON.stringify(first[0]?.snapshot ?? []);
+    assert.ok(snap1.includes('操作者预设'), '首次唤醒走 bootstrap 前导注入');
+    for (const part of ENV_TEXT.split('\n')) {
+      assert.ok(snap1.includes(part), `bootstrap 唤醒信封必须带操作者预写的环境说明（缺：「${part.slice(0, 20)}」）`);
+    }
 
     // 第二条消息（非首次唤醒）不得再注入
     const second = { ...event, message_id: 4243, message: [{ type: 'text', data: { text: '有没有人在' } }], raw_message: '有没有人在' };
     await h.handleIncoming('group', '456', second, h.cfg);
-    for (let i = 0; i < 100 && h.calls.prompts.length < 2; i += 1) await new Promise((resolve) => setTimeout(resolve, 50));
-    if (h.calls.prompts.length >= 2) {
-      const text2 = h.calls.prompts[1].content.map((c) => String(c?.text ?? '')).join('\n');
-      assert.ok(!text2.includes(ENV_TEXT), '第二次唤醒不得重复注入初始提示词');
+    for (let i = 0; i < 100 && inbounds().length < 2; i += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+    if (inbounds().length >= 2) {
+      const snap2 = JSON.stringify(inbounds()[1]?.snapshot ?? []);
+      assert.ok(!snap2.includes(ENV_TEXT), '第二次唤醒不得重复注入初始提示词');
     }
   } finally { await h.close(); }
 });

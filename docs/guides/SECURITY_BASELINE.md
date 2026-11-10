@@ -29,20 +29,18 @@
 
 | 机制 | 位置 | 行为 |
 | --- | --- | --- |
-| 白名单 | `src/bridge.js` `allowed()` | `deny` 优先于 `allow`；两侧统一 `String()` 比较（兼容 OneBot int64 的数字/字符串差异）；allow 为空时返回 `allowAllWhenEmpty`（**默认 false**） |
-| 模式门 | `modeAllowed()` / `isSessionAllowedInCurrentMode()` | 会话 key 必须严格匹配 `^(group\|private):\d+$`；`closed-agent` 只放行 `private:<ownerQQ>` |
-| 配置失败 | `loadConfig()` | `config.json` 缺失/解析失败 → **fail-fast 退出**（不是"用默认值继续跑"） |
-| 管理员识别 | `handleIncoming()` | `String(event.user_id) === String(cfg.ownerQQ ?? '')`；未配置 `ownerQQ` 时启动日志明确告警（审批/管理命令/封闭 agent 全部不可用） |
+| 白名单 | `src/bridge.js` `allowed()` | `deny` 优先于 `allow`；两侧统一 `String()` 比较（兼容 OneBot int64 的数字/字符串差异）；allow 为空时返回 `allowAllWhenEmpty`（**默认 false**）。注意这是发送动作的**第二道闸**：入站路由由网关 `GATEWAY_CONVERSATIONS` 裁决 |
+| 配置失败 | `loadConfig()` | `config.json` 缺失/解析失败 → **fail-fast 退出**（不是"用默认值继续跑"）；`gateway.url/secret/adapterId` 三项缺失同样**启动即失败** |
+| 管理员识别 | 入站处理 | `String(event.user_id) === String(cfg.ownerQQ ?? '')`；未配置 `ownerQQ` 时启动日志明确告警（管理命令不可用） |
 
-### 2. 工具面（agent 能做什么）
+### 2. 动作面（agent 能做什么）
 
 | 机制 | 位置 | 行为 |
 | --- | --- | --- |
-| 预设工具守卫 | `plugins/qq-agent-presets/qq-tool-restrict.mjs`（唯一权威实现，`dsh/agent-presets/*/qq-tool-restrict.mjs` 只是 re-export 壳） | 两道闸门：① 注册期 `tools.restrict({deny})` 把本地执行/宿主运行期工具**从模型 schema 里隐藏**（67 个名字，2026-09-29 按 DSH 0.2.0-rc.2 真实工具清单重新对账）；② 执行期 `tools.guard` 精确白名单：仅 `mcp__snowluma__*` / `mcp__snowluma-host__*` / `mcp__web-search-safe__*` + `ask_user_question` / `todo_write`；空/未知名字一律拒绝；内置 `tool-web` 的 search/fetch 关闭。对账工具：`npm run scan:tool-names`（**每次升级 DSH 后应跑一次**：`tools.restrict` 对不存在的名字会抛错并被逐个 try/catch 吞掉 ⇒ 假名 = 静默失效；新版本新增的能力若不补进名单 = 漏隐藏） |
-| 预设 fail-closed | `resolvePresetName()` + `ensureSession()` | 群聊/仿真会话拿不到受限预设时**拒绝建会话**，绝不回退到含本地工具的 DSH 默认预设；只有 `closed-agent`（管理员私聊）允许回退 |
-| 发送强制白名单 | 所有 `/api/send/*`、`/api/socialV2/send-*` | 目标必须命中 `allow.groups` / `allow.private`（每次都重新校验，不做缓存） |
+| 动作面 = 网关清单 | `src/gateway/actions-manifest.json` + `action-handlers.js` | agent 的全部工具面 = 网关 `/v1/actions/manifest` 里 `enabled` 的 QQ 动作（`chat_qq_*` 一族）。桥接**零本地工具、零自带 MCP**——不存在 bash/文件/子代理面可供诱导。每条动作带 `enabled`（实现覆盖 + `socialV2.tools.*` configFlag 现算），未启用的动作网关不注册 |
+| 发送强制白名单 | 所有发送类动作 handler | 目标必须命中 `allow.groups` / `allow.private`（每次都重新校验，不做缓存） |
 | 动态 ACL | `resolveVoicePathForV2()` / `voicePathInsideLibrary()` | 语音只能取语音库目录内的文件；贴纸只能发收藏库内的表情；图片只能读 SnowLuma home 内的本地文件（realpath 复核防符号链接逃逸） |
-| **只探测、不部署**（L6 设计不变量） | `mcp-host-server.js` | 该 MCP server **只提供 `snowluma_status`（只读探活 `get_login_info`）**。⚠️ **v0.1.5 起删除了 `start_snowluma` / `stop_snowluma` 与 `snowluma.allowProcessControl`**：SnowLuma EULA §5.4 规定「将其并入第三方安装包或 Docker 镜像、**通过自动化脚本部署**」须事先书面授权，原生组件属**专有组件**。⇒ 本程序不安装、不复制、不打包、不程序化启停 SnowLuma；用户自行安装与启动。详见 `LICENSE` 与 `QSH-plan/QSH_PLAN.md` §6.0 |
+| **只探测、不部署**（设计不变量） | `src/integrations/snowluma-conn.js` | 桥接对 SnowLuma **只做 OneBot 收发与只读探活**（`get_login_info` / `get_status` / 心跳）。⚠️ SnowLuma EULA §5.4 规定「将其并入第三方安装包或 Docker 镜像、**通过自动化脚本部署**」须事先书面授权，原生组件属**专有组件**。⇒ 本程序不安装、不复制、不打包、不程序化启停 SnowLuma；用户自行安装与启动。详见 `LICENSE` |
 
 ### 3. 出站内容（模型能说什么、能发什么）
 
@@ -63,7 +61,7 @@
 | 定长比较 | `crypto.timingSafeEqual` | 比较前先比长度，避免 `!==` 短路带来的时延侧信道 |
 | Host 校验 | 请求最前面 | Host 必须是 `127.0.0.1:<port>` / `localhost:<port>` / `[::1]:<port>`，否则 403（DNS rebinding 硬化） |
 | CSRF | 非 GET 请求 | 必须 `content-type: application/json`；若带 `Origin`，其 host 必须等于本机 |
-| agent 令牌隔离 | 请求前缀白名单 | 带 `x-agent-token` 的请求默认拒绝，仅放行 `/api/status`、`/api/socialV2/*`、`/api/send/*`、`/api/images/*`、`/api/authorize/read`；管理端点（人格/提示词/思考强度/白名单/重启/令牌）一律 403 |
+| agent 令牌隔离 | 请求前缀白名单 | 带 `x-agent-token` 的请求默认拒绝，仅放行只读面（`/api/status`、`/api/socialV2/*`、`/api/send/*`、`/api/images/*`、`/api/authorize/read`）；管理端点（白名单/安全设置/重启/令牌等）一律 403 |
 | 空令牌拒绝 | `x-agent-token === ''` | 一律 403，避免"空 = 管理端"的绕过 |
 | 写操作不挂 GET | 全路由审查 | 会触发副作用的接口（表情强制同步、语音同步）一律 POST；GET 只读 |
 | 请求体限制 | `readBody()` | 声明长度或实际累计超过 1 MB → 413；30 秒读取超时 |
@@ -76,47 +74,31 @@
 | 原子写 | `atomicWriteJson/Text()` | 唯一随机临时名 + rename（Windows EPERM 退避重试），不会写坏配置 |
 | Windows ACL 收紧 | `hardenStateDirAcl()` + `scripts/harden-state-acl.mjs` | Windows 上 `mode: 0o600` 是**空操作**，因此启动时切断 `state/` 的继承链，只保留当前用户/SYSTEM/Administrators。改 ACL 需要 WRITE_DAC —— **目录属主通常本来就有，所以一般不弹 UAC**；失败时用 `Start-Process -Verb RunAs` 提权重试一次（`--elevated` 短路自身，杜绝递归），再失败就打印可复制命令并**以 0 退出、绝不阻断启动**。控制台「访问与安全」页显示告警条与「重新检测」按钮 |
 | 令牌不回显 | 日志/活动/工具日志 | 控制台令牌只打前 6 位；活动日志与工具调用参数过 `redactSensitiveText` / `redactSensitive`（递归处理 JSON 字符串叶子） |
-| 令牌只发回环 | `dsh-client.ensureAuth()` | DSH launch token 换 Cookie 时必须放进 URL，因此**默认拒绝非回环 baseUrl**；远程部署需显式 `dsh.allowRemote: true` |
-| 路径校验（读点） | `roleRawContent()` 等 | 人格名在**读取点**也做 `sanitizeRoleName` + `path.resolve` 包含性校验（`state/current-role.json` 是用户可直接编辑的文件） |
-| 原型污染 | 记忆写入/加载 | `__proto__` / `constructor` / `prototype` 键在写入与加载两侧都被拒绝；配置合并用对象展开（不触发 setter） |
+| 令牌只发网关 | `gateway.secret` HMAC | 桥接对网关的全部请求（`/v1/inbound`、`/v1/actions` 回执）都用 `gateway.secret` 做 HMAC 签名；secret 只存在 `config.json`（ACL 收紧对象），不出现在任何出站文本或日志里 |
+| 原型污染 | 状态 JSON 加载 | `__proto__` / `constructor` / `prototype` 键在加载侧被拒绝；配置合并用对象展开（不触发 setter） |
 
-### 6. 与 DSH 沙箱的 ACL 交互（DSH 0.2.0 起；**这是有意的取舍，不是缺陷**）
+### 6. state/ 的 Windows ACL（防本机其他用户读令牌）
 
-DSH 的 Windows 文件沙箱按**能力 SID** 授权：SID 由 `sha256(规范化工作区路径)` 派生
-（形如 `S-1-4-<a>-<b>`；同一个工作区路径每次会话派生出同一个 SID，**重命名工作区会换一个**），
-沙箱进程跑在 `WRITE_RESTRICTED` + Low 完整性的令牌里，**写权限要靠工作区根上那条
-可继承 ACE 沿继承链传下来**。DSH 只在首次进入工作区时下发一次
-（之后有 exact-ACE 跳过，不会重新下发），也从不修改任何对象的保护标志。
-
-由此产生一条必须知道的交互：
+桥接不再拉起任何沙箱进程（智能体运行时在网关侧），但 `state/` 里仍有明文凭据
+（控制台令牌、SnowLuma OneBot 令牌、聊天记录）。Windows 上 `mode 0o600` 是**空操作**，
+所以收紧只能动 ACL：
 
 | 事实 | 后果 |
 | --- | --- |
-| `harden-state-acl.mjs` 用 `/inheritance:r` 切断 `state/` 与 `config.json` 的继承链 | 这两处的 DACL 里**没有**能力 SID ⇒ **DSH 沙箱会话写不进去**（EPERM / Access denied），而无沙箱终端完全正常 |
-| 这是收紧凭据的**唯一手段**（Windows 上 `mode 0o600` 是空操作） | 取舍明确：**保住凭据不外泄** > 沙箱内可写 |
+| `harden-state-acl.mjs` 用 `/inheritance:r` 切断 `state/` 与 `config.json` 的继承链，只留当前用户/SYSTEM/Administrators | 本机其他已登录用户读不到凭据与聊天记录 |
+| 切断继承需要 WRITE_DAC | 目录属主通常本来就有，一般不弹 UAC；失败时提权重试一次，再失败就打印可复制命令并**以 0 退出、绝不阻断启动** |
 
-因此本项目的规矩是：**任何从沙箱里跑的东西都不得写 `state/`**。
-测试夹具、探针、self-test 的临时产物一律落在系统临时目录
-（见 `scripts/probe-auth.mjs` 的 `probeWorkspaceDir`）。
-
-诊断：`npm run diagnose:acl` —— 只读扫描，列出全部被切断继承的路径并分成
-「有意收紧（`state/`、`config.json`）」与「非预期收紧」两类。
-
-> ⛔ **绝不要用 `/inheritance:e` 去"修好" `state/` 的沙箱写入**：恢复继承会把父目录的
+> ⛔ **绝不要用 `/inheritance:e` 去"修好" `state/` 的权限**：恢复继承会把父目录的
 > 可继承 ACE 一起带回来，其中包含 `NT AUTHORITY\Authenticated Users: Modify` 与
 > `BUILTIN\Users: ReadAndExecute` —— 那正是收紧时要摘掉的两条，等于把控制台令牌、
 > SnowLuma OneBot 令牌与全部 QQ 聊天记录重新开放给本机任何已登录用户。
 
-> ⚠️ 已知的**非预期**收紧（2026-09-29 实测）：`plugins/qq-agent-presets/**` 与
-> `plugins/qq-mode-console/**` 的内容也被切断了继承（`plugins/` 自身没有）。
-> **本仓库没有任何脚本这么做**，来源不明（手工 icacls 或仓库外工具）。
-> 它的副作用是沙箱会话里改不动 L7 守卫（`qq-tool-restrict.mjs`）。
-> 这两处不含凭据，恢复继承不涉及泄密风险 —— 是否恢复由使用者决定（`npm run diagnose:acl`
-> 会打印命令）。`state/` 不在此列。
+诊断：`npm run diagnose:acl` —— 只读扫描，列出全部被切断继承的路径并分成
+「有意收紧（`state/`、`config.json`）」与「非预期收紧」两类。
 
 ### 7. 网络
 
-`src/safe-fetch.js`（仅暴露给 agent 的只读联网）：
+`src/media/safe-fetch.js`（桥接全部出站 HTTP 的统一传输：表情/图片/媒体下载）：
 
 - 只允许 `http` / `https`；拒绝 URL 内嵌凭据；拒绝 `file:` / `gopher:` 等 scheme
 - 解析出的**每一个** DNS 结果都要过私有地址判定（含 IPv4-mapped IPv6、NAT64、6to4、ULA、link-local、zone-id、十进制/八进制/十六进制 IPv4）
@@ -131,36 +113,33 @@ DSH 的 Windows 文件沙箱按**能力 SID** 授权：SID 由 `sha256(规范化
 
 | # | 风险 | 现状与缓解 | 为什么不修 |
 | --- | --- | --- | --- |
-| R1 | **敏感信息审计是启发式的** | 能抓"带赋值关系的凭据"和本机路径；抓不到任意形态的秘密 | 通用秘密检测无法在没有密钥的情况下做对；硬边界在白名单与工具面，审计是兜底 |
-| R2 | **`state/` 里的令牌是明文** | Windows 已用 ACL 收紧；Linux 用 `0700` | 引入凭据库/DPAPI 会显著提高部署门槛，列为 QSH 里程碑 M2 的候选（口令派生已规划） |
+| R1 | **敏感信息审计是启发式的** | 能抓"带赋值关系的凭据"和本机路径；抓不到任意形态的秘密 | 通用秘密检测无法在没有密钥的情况下做对；硬边界在白名单与动作面，审计是兜底 |
+| R2 | **`state/` 里的令牌是明文** | Windows 已用 ACL 收紧；Linux 用 `0700` | 引入凭据库/DPAPI 会显著提高部署门槛 |
 | R3 | **贴纸备注跨会话共享** | 只有注入路径做了加固，未做会话隔离 | 单一账号的贴纸库本就是全局的；多群互害场景很少 |
-| R4 | **远程停止不是原子的** | `session/control` + `updateQueue` + `cancel` 是尽力而为，已执行的工具副作用无法回滚 | DSH 协议没有事务语义 |
-| R5 | **离线队列不保证送达** | 每会话最多 50 条，进程退出即丢 | 一致性代价过高；README 已写明 |
-| R6 | **预设不变量检查是子串存在性** | 防误删，不防恶意 | 能改这个文件的人本来就是管理员，真正的硬边界在工具守卫与白名单 |
-| R7 | **`self-test.js` 只证明链路通** | 不做断言 | 它是连通性探针，不是回归套件（回归在 `npm run test:audit`） |
-| R8 | **单人维护、无外部安全审计** | 有离线回归 + 本文档 | 计划在 QSH v1.0 发布前做一次外部/对抗式复审 |
-| R9 | **`state/` 的 ACL 收紧可能失败**（未提权且目录属主权限被策略收走时） | `scripts/harden-state-acl.mjs` 会自动提权重试一次；仍失败则明确告警 + 给出可复制命令 + 控制台告警条 | 改 ACL 属于需要特权的操作；**降级为"明确告警"而不是"阻断启动"**是刻意的取舍（否则用户会为了能启动而关掉整条安全链路）。QSH M2 会用口令派生 + HttpOnly Cookie 把最敏感的控制台凭据从明文落盘里拿掉 |
-| R10 | **收紧 `state/` 后，DSH 沙箱会话写不进 `state/`**（见 §2.6） | 有意取舍，非缺陷；诊断见 `npm run diagnose:acl` | 两者不可兼得：能力 SID 只能靠继承下发，而切断继承正是防"本机其他用户读令牌"的唯一手段。**代价已被接受并写进文档**，项目自己的测试夹具/探针据此改用系统临时目录 |
-| R11 | **`plugins/**` 内容被意外切断继承，沙箱里改不动 L7 守卫** | 来源不明（本仓库无此脚本）；`npm run diagnose:acl` 会列出并打印恢复命令 | 该处不含凭据，恢复继承无泄密风险；但若不恢复，被沙箱约束的 DSH agent 就无法维护工具守卫 —— 需要人工在无沙箱终端改 |
+| R5 | **离线队列不保证送达** | 进程退出即丢 | 一致性代价过高；README 已写明 |
+| R8 | **单人维护、无外部安全审计** | 有离线回归 + 本文档 | 计划做一次外部/对抗式复审 |
+| R9 | **`state/` 的 ACL 收紧可能失败**（未提权且目录属主权限被策略收走时） | `scripts/harden-state-acl.mjs` 会自动提权重试一次；仍失败则明确告警 + 给出可复制命令 + 控制台告警条 | 改 ACL 属于需要特权的操作；**降级为"明确告警"而不是"阻断启动"**是刻意的取舍（否则用户会为了能启动而关掉整条安全链路） |
+
+> 🗄️ 精简重构随能力删除而移除的风险项：R4（DSH 远程停止非原子）、R6（预设不变量子串检查）、
+> R7（self-test）、R10/R11（DSH 沙箱与 `plugins/**` ACL 交互）——DSH 直连面与自带 MCP 已退役。
 
 ---
 
 ## 四、发布前必须跑的检查（回归清单）
 
 ```bash
-npm run test:audit          # 30 个离线回归脚本（含安全专项），必须全绿
-npm run verify:adaptation   # DSH 适配一致性（preset/工具守卫/MCP 挂载/活 DSH 实测）
-npm run verify:persona      # 人格配置一致性
-npm run diagnose:acl        # ACL 收紧路径盘点（只读；需在**无沙箱**终端跑，见 §2.6）
-npm run scan:tool-names     # 守卫名单 vs 已安装 DSH 的真实工具名（每次升级 DSH 后跑）
+npm run test:audit          # 离线审计套件（含安全专项），必须全绿
+npm run verify:decouple     # 平台解耦契约（桥接零直连、动作面 = 网关清单）
+npm run test:gateway        # 网关契约 / 状态 / 唤醒合成 / 动作层离线测试
+npm run diagnose:acl        # ACL 收紧路径盘点（只读）
 node --check src/bridge.js  # 语法门禁（大文件改动后必跑）
 ```
 
 安全专项必须覆盖（缺一不可）：
 
 - [x] 白名单/黑名单/空白名单 fail-closed（含单复数与字符串/数字两种写法）
-- [x] `closed-agent` 只对 `private:<ownerQQ>` 放行；模式切换会退役旧会话
-- [x] 预设清单不可用时**拒绝**建群聊会话（不回退到默认预设）
+- [x] `gateway.url/secret/adapterId` 缺失时**启动即失败**（绝不静默丢消息）
+- [x] 动作面 = 网关清单中 `enabled` 的条目；未实现/未启用的动作不会注册
 - [x] agent token 无法访问任何管理端点；空 agent token 被拒
 - [x] 控制台伪造 `Host` 被拒；错令牌（含错长度、大小写、尾空格）被拒
 - [x] `/api/authorize/read` 空令牌被拒
@@ -168,10 +147,8 @@ node --check src/bridge.js  # 语法门禁（大文件改动后必跑）
 - [x] 语音只能取语音库内的文件（含 `allowAbsolutePath=true` 与相对穿越两种情形）
 - [x] 出站文本命中敏感信息时整条拦截；含已知会话令牌时直接抛错
 - [x] SSRF：scheme、URL 凭据、私有 IP、重定向、超时、大小限制（11 项）
-- [x] 桥接 `200 + {ok:false}` 会被 MCP 当作失败上报（不产生静默假成功）
-- [x] 旧只读工具在非 `closed-agent` 模式下 fail-closed
 - [x] `state/` ACL 助手：非阻断、防递归、`start.bat` 纯 ASCII+CRLF 且先于桥接调用（**结构级断言**）
-- [ ] **`state/` ACL 的真实 icacls/UAC 行为**：需在普通终端手动复跑 `node scripts/harden-state-acl.mjs` 确认（沙箱/CI 里改 ACL 会被拒，无法自动化）
+- [ ] **`state/` ACL 的真实 icacls/UAC 行为**：需在普通终端手动复跑 `node scripts/harden-state-acl.mjs` 确认（CI 里改 ACL 会被拒，无法自动化）
 
 ---
 

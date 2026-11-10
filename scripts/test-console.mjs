@@ -58,15 +58,7 @@ if (origRole) {
   ok('恢复原角色', r.body.ok === true && r.body.role === origRole);
 }
 
-// 5. 会话映射
-r = await api('/api/sessions');
-ok('会话映射', Array.isArray(r.body.sessions), `共 ${r.body.sessions.length} 个`);
-
-// 6. 挂起列表
-r = await api('/api/pending');
-ok('挂起列表', Array.isArray(r.body.pending), `共 ${r.body.pending.length} 个`);
-
-// 7. 白名单：读原值 → 加测试群 → 恢复
+// 5. 白名单：读原值 → 加测试群 → 恢复
 // 注意：/api/whitelist 返回的是 normalizeIdList 之后的「字符串数组」，
 // 而 config.json 里可能是数字，直接 JSON.stringify 比较会因类型不同而误判失败。
 const sameIds = (a, b) => JSON.stringify((a || []).map(String).sort()) === JSON.stringify((b || []).map(String).sort());

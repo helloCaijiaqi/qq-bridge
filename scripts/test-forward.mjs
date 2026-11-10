@@ -13,7 +13,7 @@ import {
   extractForwardIds,
   formatForwardResponse,
   nodeText
-} from '../src/forward.js';
+} from '../src/chat/forward.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');

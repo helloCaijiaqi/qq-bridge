@@ -14,7 +14,7 @@ import {
   buildStickerStrategyHint,
   applyStickerNote,
   markStickerUsed
-} from '../src/sticker-lib.js';
+} from '../src/chat/sticker-lib.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -71,7 +71,7 @@ console.log('## sticker-lib 纯函数');
   ok(q2.matched === 1 && q2.stickers[0].id === 'c', 'formatStickerList 按本地笔记搜索');
   const ctx = buildStickerContext(list, 8);
   ok(ctx.includes('笑死') && ctx.includes('生气'), 'buildStickerContext 包含备注');
-  ok(buildStickerStrategyHint().includes('qq_send_sticker'), '策略提示包含发送工具');
+  ok(buildStickerStrategyHint().includes('chat_qq_send_sticker'), '策略提示包含发送工具（chat_qq_* 主名）');
 }
 
 {
@@ -99,21 +99,9 @@ console.log('## 配置文件');
 
 console.log('## 表情单气泡约束');
 {
-  const mcp = fs.readFileSync(path.join(ROOT, 'src', 'mcp-snowluma-safe.js'), 'utf8');
-  const sendStickerBlock = mcp.slice(mcp.indexOf("'qq_send_sticker'"), mcp.indexOf("'qq_sticker_note'"));
-  ok(!sendStickerBlock.includes('message: z.string()'), 'qq_send_sticker MCP 不再接受 message 参数');
-  ok(sendStickerBlock.includes('不能在同一气泡里附带文字'), 'qq_send_sticker 描述强调单气泡');
   const hint = buildStickerStrategyHint();
   ok(hint.includes('不能在同一气泡里附带文字'), '策略提示禁止同气泡混文字');
   ok(!hint.includes('先发一句话再发一张'), '策略提示不再引导“先发一句话再发一张”');
-}
-
-console.log('## MCP 工具描述存在性');
-{
-  const mcp = fs.readFileSync(path.join(ROOT, 'src', 'mcp-snowluma-safe.js'), 'utf8');
-  for (const name of ['qq_list_stickers', 'qq_get_sticker_image', 'qq_send_sticker', 'qq_sticker_note', 'qq_set_sticker_remark']) {
-    ok(mcp.includes(`'${name}'`) || mcp.includes(`"${name}"`), `MCP 工具 ${name} 已注册`);
-  }
 }
 
 console.log('## bridge 路由/函数存在性');
@@ -141,7 +129,7 @@ if (process.env.QQ_BRIDGE_TEST_LIVE === '1') {
     const items = Array.isArray(body.data) ? body.data : [];
     ok(items.length > 0, `返回 ${items.length} 个收藏表情`);
     if (items.length > 0) {
-      const { safeFetchBuffer } = await import('../src/safe-fetch.js');
+      const { safeFetchBuffer } = await import('../src/media/safe-fetch.js');
       try {
         const img = await safeFetchBuffer(items[0].url, 4 * 1024 * 1024);
         ok(img.buffer.length > 0, `可抓取表情图片字节（${img.buffer.length} bytes）`);

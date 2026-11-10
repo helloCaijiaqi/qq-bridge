@@ -10,25 +10,21 @@
 //   R6  DSH 设置里的空 ownerQQ 不得覆盖 config.json
 //   R7  预设名必须先校验再拼路径（DSH 未连接时 resolvePresetName 会原样放行）
 //   R8  wake-config 的 triggers 只允许已知字段（防状态文件/提示词被垃圾键撑大）
-//   R9  memory-update 不得凭空建条目、不得写穿原型链
+//   R9  memory-update 不得凭空建条目、不得写穿原型链（随记忆能力整块删除而退役）
 //   R10 wait 的租约按归一化 key 记账（group:0456 与 group:456 是同一个会话）
 //   R11 mdToPlain：`*` 列表/乘法不被当成斜体；超长畸形输入不再 O(n²)
 //   R12 黑话提取的候选扫描次数有上限（大量 `[` 不得卡住事件循环）
 //   R13 表情备注截断不切开代理对
-//   R14 token 账本：被淘汰采样被新基线覆盖后不得重复计费
+//   R14 token 账本重复计费回归（随计费能力整块删除而退役）
 //   R15 /api/send/* 失败路径的 st/now 越界（与 R2 同型，残留在这条旧发送工具真正走的端点）
 //   R16 reserved2 消息落库不得丢 kind/emojiId/summary/subType（表情 CDN 兜底与标签全靠它）
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import { bridgeHarness } from './audit-bridge-harness.mjs';
-import { mdToPlain } from '../src/md-to-plain.js';
-import { extractJsonArray } from '../src/slang-learner.js';
-import { sanitizeStickerText } from '../src/sticker-lib.js';
-import { createTokenLedger } from '../src/token-ledger.js';
-import { DEFAULT_PRICE_TABLE } from '../src/model-prices.js';
+import { mdToPlain } from '../src/chat/md-to-plain.js';
+import { sanitizeStickerText } from '../src/chat/sticker-lib.js';
 
 const CONSOLE = { 'x-console-token': 'fixture-console-token' };
 let failures = 0;
@@ -66,26 +62,22 @@ async function withServer(h, run) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// ── R1. 无令牌智能体调用（closed-agent 的发送面） ────────────────────────────
-await test('R1 无令牌智能体调用：closed-agent 可发送/探测，v2 面仍拒绝', async () => {
+// ── R1. 无令牌智能体调用的边界 ──────────────────────────────────────────────
+await test('R1 无令牌智能体调用：状态探测受限视图，无令牌发送与 v2 面均拒绝', async () => {
   const h = await bridgeHarness();
   try {
-    h.setMode('closed-agent');
     await withServer(h, async (port) => {
-      // 状态探测（legacyReadToolAllowed 走这条），必须回最小对象且不含管理字段
+      // 状态探测必须回最小对象且不含管理字段
       const status = await call(port, '/api/status', { headers: { 'x-agent-call': '1' } });
       assert.equal(status.status, 200, '不带会话令牌的状态探测必须放行');
       assert.equal(status.json.ownerQQ, undefined, '智能体视图不得暴露 ownerQQ');
       assert.equal(status.json.allowGroups, undefined, '智能体视图不得暴露白名单');
-      assert.equal(status.json.mode, 'closed-agent');
 
-      // closed-agent 的私聊发送（管理员私聊）必须可用
+      // 发送必须携带会话令牌（无模式概念，closed-agent 免令牌通道已随模式删除）
       const sent = await call(port, '/api/send/private', {
         method: 'POST', headers: { 'x-agent-call': '1' }, body: { userId: '123', message: '你好' }
       });
-      assert.equal(sent.status, 200, `closed-agent 无令牌发送应放行，实际 ${sent.status} ${sent.body}`);
-      assert.equal(sent.json?.sent, 1, '应当真的发出一条');
-      assert.ok(h.calls.http.some((c) => String(c.url).endsWith('/send_private_msg')), '发送应走 OneBot send_private_msg');
+      assert.equal(sent.status, 403, `无令牌发送必须拒绝，实际 ${sent.status} ${sent.body}`);
 
       // v2 会话面绝不能因为「无令牌」退化成管理端
       const v2 = await call(port, '/api/socialV2/prompt?key=group%3A456', { headers: { 'x-agent-call': '1' } });
@@ -106,7 +98,6 @@ await test('R2 send-burst 失败路径不再抛 ReferenceError，并回滚发送
     }
   });
   try {
-    h.setMode('reserved2');
     const st = h.getSocialV2State('group:456');
     const before = st.sendTimes.length;
     await withServer(h, async (port) => {
@@ -125,7 +116,6 @@ await test('R2 send-burst 失败路径不再抛 ReferenceError，并回滚发送
 await test('R3 命中唤醒限频时安排延后重试，不丢这一枪', async () => {
   const h = await bridgeHarness({ config: { socialV2: { wake: { maxWakePerMinute: 1 } } } });
   try {
-    h.setMode('reserved2');
     const st = h.getSocialV2State('group:456');
     st.wakeTimes.push(Date.now()); // 占满每分钟 1 次的窗口
     const before = h.calls.prompts.length;
@@ -137,103 +127,10 @@ await test('R3 命中唤醒限频时安排延后重试，不丢这一枪', async
   } finally { await h.close(); }
 });
 
-// ── R4. 繁忙队列里的定时器类唤醒不能被"未读已处理"吞掉 ───────────────────────
-await test('R4 timeout/replyCheck 类暂存唤醒按定时器语义补发', async () => {
-  const h = await bridgeHarness({ config: { socialV2: { proactive: { enabled: false } } } });
-  try {
-    h.setMode('reserved2');
-    const st = h.getSocialV2State('group:456');
-    // 模拟「回合结束、未读已全部标读」，队列里留着一条到期的 timeout 与一条已经处理过的 @
-    st.unread = [];
-    st.lastUnreadSeq = 1;
-    st.pendingWakeReasons = [{ reason: 'timeout', seq: 1 }, { reason: 'atMention', seq: 1 }];
-    st.wakeConfig.infinite = false;
-    st.wakeConfig.sleepUntil = new Date(Date.now() - 1000).toISOString();
-
-    const result = h.replayPendingWakeReasonsV2('group:456');
-    assert.equal(result?.action, 'timer', 'timeout 必须走定时器补偿，而不是按未读判断');
-    // 到期定时器被补偿后应立即补一次 timeout 唤醒
-    for (let i = 0; i < 40 && !h.calls.prompts.length; i += 1) await sleep(25);
-    assert.equal(h.calls.prompts.length, 1, '到期的有限潜水必须补发一次 timeout 唤醒');
-    const text = h.calls.prompts[0].content.map((c) => String(c?.text ?? '')).join('\n');
-    assert.match(text, /有限潜水时间已到|睡眠时间已到/);
-
-    // 第二条 @ 与未读无关但对应消息已被处理 → 仍然按消息语义跳过
-    const second = h.replayPendingWakeReasonsV2('group:456');
-    assert.equal(second?.action, 'skipped', '已被当前回合处理的消息类唤醒仍然跳过');
-  } finally { await h.close(); }
-});
-
-// ── R5. turn/end 没有 turn/start：不得留下永久 collector ─────────────────────
-await test('R5 未跟踪的 turn/end 不留下 collector（否则会话永久繁忙）', async () => {
-  const h = await bridgeHarness();
-  try {
-    h.setMode('reserved2');
-    const sid = 'fixture-session';
-
-    // ① 只有 turn/end（重连快照没带上 turn/start）
-    const orphan = h.trackTurnEvent(sid, { type: 'turn/end', data: { turn: 7, reason: { kind: 'completed' } } });
-    assert.equal(orphan.ended, null);
-    assert.equal(h.collectors.has(sid), false, '孤儿 turn/end 不得留下 collector');
-
-    // ② 只有 assistant/message（第一条事件不是 turn/start）
-    h.trackTurnEvent(sid, { type: 'assistant/message', data: { turn: 8, message: { content: [{ type: 'text', text: 'hi' }] } } });
-    assert.equal(h.collectors.has(sid), false, '非 turn/start 的首条事件不得创建 collector');
-
-    // ③ 正常回合仍然要能收集到文本并收尾
-    h.trackTurnEvent(sid, { type: 'turn/start', data: { turn: 9 } });
-    assert.equal(h.collectors.has(sid), true, 'turn/start 必须建立 collector');
-    h.trackTurnEvent(sid, { type: 'assistant/message', data: { turn: 9, message: { content: [{ type: 'text', text: '回复内容' }] } } });
-    const done = h.trackTurnEvent(sid, { type: 'turn/end', data: { turn: 9, reason: { kind: 'completed' } } });
-    assert.equal(done.ended?.text, '回复内容', '正常回合的文本必须被收集');
-    assert.equal(h.collectors.has(sid), false, '正常回合结束后 collector 必须清理');
-  } finally { await h.close(); }
-});
-
-// ── R6. DSH 设置里的空 ownerQQ 不覆盖 config.json ───────────────────────────
-await test('R6 DSH 设置 ownerQQ 留空时保留 config.json 的值', async () => {
-  const h = await bridgeHarness();
-  try {
-    h.api.settings.describe = async () => ({
-      result: { ok: true, value: { namespaces: [{ ns: 'qq-mode', value: { mode: 'reserved2', ownerQQ: '' } }] } }
-    });
-    await h.refreshMode();
-    assert.equal(h.cfg.ownerQQ, 123, '空串表示「不覆盖」，不能把 ownerQQ 抹成 null');
-
-    h.api.settings.describe = async () => ({
-      result: { ok: true, value: { namespaces: [{ ns: 'qq-mode', value: { mode: 'reserved2', ownerQQ: 456 } }] } }
-    });
-    await h.refreshMode();
-    assert.equal(h.cfg.ownerQQ, 456, '非空值仍然要能覆盖');
-  } finally { await h.close(); }
-});
-
-// ── R7. 预设名先校验再拼路径 ────────────────────────────────────────────────
-await test('R7 未知 preset 名直接被拒（含路径穿越形态）', async () => {
-  const h = await bridgeHarness();
-  try {
-    h.setPresets([]); // 模拟 DSH 未连接：清单为空
-    // 给临时仓库放一份真实的预设源文件，验证「已知 preset 不会被误伤」
-    const presetFile = path.join(h.temp, 'dsh', 'agent-presets', 'qq-chat-v2', 'agent.cordis.yml');
-    fs.mkdirSync(path.dirname(presetFile), { recursive: true });
-    fs.writeFileSync(presetFile, '- id: persona\n  config:\n    prefix: |-\n      测试用仿真提示词。\n');
-    await withServer(h, async (port) => {
-      for (const bad of ['../../etc', '..\\..\\..\\x', 'qq-chat/../../x', 'standard']) {
-        const res = await call(port, '/api/preset/sim-prompt?preset=' + encodeURIComponent(bad));
-        assert.equal(res.status, 400, `preset=${bad} 必须被拒，实际 ${res.status}`);
-      }
-      const ok = await call(port, '/api/preset/sim-prompt?preset=qq-chat-v2');
-      assert.equal(ok.status, 200, `已知 preset 仍应可用：${ok.body}`);
-      assert.equal(ok.json?.content, '测试用仿真提示词。');
-    });
-  } finally { await h.close(); }
-});
-
 // ── R8. wake-config 只接受已知 triggers 字段 ────────────────────────────────
 await test('R8 wake-config 丢弃未知 triggers 键（不落盘、不回传模型）', async () => {
   const h = await bridgeHarness();
   try {
-    h.setMode('reserved2');
     const st = h.getSocialV2State('group:456');
     // 让沉睡前观察放行：10 分钟前来过消息
     st.lastIncomingAt = Date.now() - 10 * 60 * 1000;
@@ -255,44 +152,10 @@ await test('R8 wake-config 丢弃未知 triggers 键（不落盘、不回传模�
   } finally { await h.close(); }
 });
 
-// ── R9. memory-update 不得凭空建条目 / 写穿原型链 ────────────────────────────
-await test('R9 memory-update 只编辑已有条目，不写穿 Object.prototype', async () => {
-  const h = await bridgeHarness();
-  try {
-    h.setMode('reserved2');
-    const st = h.getSocialV2State('group:456');
-    st.memberImpressions['群友A'] = { traits: ['友善'], interactionCount: 1, lastSeenAt: Date.now() };
-    await withServer(h, async (port) => {
-      const inherited = await call(port, '/api/socialV2/memory-update', {
-        method: 'POST', token: st.agentToken, body: { key: 'group:456', category: 'memberImpression', target: 'toString', newContent: 'hacked' }
-      });
-      assert.equal(inherited.status, 404, '继承来的属性名不得被当成已有条目');
-      assert.equal(Object.prototype.hasOwnProperty.call(st.memberImpressions, 'toString'), false);
-      assert.equal(Object.prototype.toString.traits, undefined, '不得往内置函数对象上写属性');
-
-      const unknown = await call(port, '/api/socialV2/memory-update', {
-        method: 'POST', token: st.agentToken, body: { key: 'group:456', category: 'memberImpression', target: '不存在的群友', newContent: 'x' }
-      });
-      assert.equal(unknown.status, 404, '不存在的条目不凭空创建（防止无限塞名字）');
-
-      const ok = await call(port, '/api/socialV2/memory-update', {
-        method: 'POST', token: st.agentToken, body: { key: 'group:456', category: 'memberImpression', target: '群友A', newContent: '幽默，爱接梗' }
-      });
-      assert.equal(ok.status, 200, ok.body);
-      // 跨 vm realm 的数组原型不同，deepEqual 会误判；逐元素断言。
-      const traits = st.memberImpressions['群友A'].traits;
-      assert.equal(traits.length, 2);
-      assert.equal(traits[0], '幽默');
-      assert.equal(traits[1], '爱接梗');
-    });
-  } finally { await h.close(); }
-});
-
 // ── R10. wait 租约按归一化 key 记账 ─────────────────────────────────────────
 await test('R10 group:0456 与 group:456 共用同一份 wait 租约', async () => {
   const h = await bridgeHarness({ config: { socialV2: { wait: { minMs: 300, maxMs: 800, defaultQuietMs: 0, minQuietAfterNewMs: 0 } } } });
   try {
-    h.setMode('reserved2');
     const token = h.getSocialV2State('group:456').agentToken;
     await withServer(h, async (port) => {
       const firstPending = call(port, '/api/socialV2/wait', {
@@ -331,41 +194,12 @@ await test('R11 mdToPlain 保留 * 列表与乘法式，且拒绝二次方退化
   assert.ok(elapsed < 500, `畸形 Markdown 不得卡住事件循环（实际 ${elapsed}ms）`);
 });
 
-// ── R12. 黑话候选扫描次数有上限 ─────────────────────────────────────────────
-await test('R12 extractJsonArray 对大量 "[" 不退化（扫描次数有上限）', async () => {
-  const t0 = Date.now();
-  const out = extractJsonArray('['.repeat(100000));
-  const elapsed = Date.now() - t0;
-  assert.equal(out, null);
-  assert.ok(elapsed < 1000, `扫描必须有界（实际 ${elapsed}ms）`);
-});
-
 // ── R13. 表情文本截断不切开代理对 ──────────────────────────────────────────
 await test('R13 sanitizeStickerText 截断不产生孤立代理', async () => {
   const text = sanitizeStickerText('a'.repeat(199) + '😀', 200);
   const last = text.charCodeAt(text.length - 1);
   assert.ok(!(last >= 0xd800 && last <= 0xdbff), '结尾不能是孤立高代理');
   assert.equal([...text].length <= 200, true);
-});
-
-// ── R14. token 账本：被基线覆盖的淘汰桶不得重复计费 ─────────────────────────
-await test('R14 淘汰桶被新基线覆盖后不再重复累加', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'qq-ledger-regress-'));
-  const file = path.join(dir, 'usage.jsonl');
-  try {
-    const ledger = createTokenLedger({ file, priceTable: DEFAULT_PRICE_TABLE, resolveKey: () => 'group:456', maxLines: 2 });
-    const at = Date.parse('2026-03-02T20:00:00+08:00');
-    const usage = (input, output) => ({ inputTokens: input, outputTokens: output });
-    const evMsg = (seq, turn, step, u) => ({ seq, time: at, type: 'assistant/message', data: { turn, step, usage: u } });
-    for (let i = 1; i <= 3; i += 1) ledger.ingestEvent({ sessionId: 's1', event: evMsg(i, i, 1, usage(1000, 100)), at });
-    // 基线（整条会话日志的权威累计）覆盖了全部三条
-    ledger.ingestBaseline({ sessionId: 's1', projection: { asOfSeq: 3, values: { tokenUsage: usage(3000, 300) } }, at });
-    const totals = ledger.summary().totals;
-    const tokens = totals.buckets.cacheMiss + totals.buckets.cacheHit + totals.buckets.cacheWrite + totals.buckets.output;
-    assert.equal(tokens, 3300, `基线已包含被淘汰的采样，不能重复计费（实得 ${tokens}）`);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
 });
 
 // ── R15. /api/send/* 失败路径：catch 里的 st/now 必须真的在作用域内 ──────────
@@ -380,13 +214,12 @@ await test('R15 /api/send/* 失败路径不抛作用域错误，并回滚发送�
     }
   });
   try {
-    // closed-agent = 管理员私聊通道：这条路径不需要会话令牌（正是旧工具的使用方式）。
-    h.setMode('closed-agent');
+    // 发送必须携带会话令牌：/api/send/* 的令牌走 body.token（与模型工具调用一致）。
     const st = h.getSocialV2State('private:123');
     const before = st.sendTimes.length;
     await withServer(h, async (port) => {
       const res = await call(port, '/api/send/private', {
-        method: 'POST', headers: { 'x-agent-call': '1' }, body: { userId: '123', message: '你好' }
+        method: 'POST', headers: { 'x-agent-call': '1' }, body: { userId: '123', message: '你好', token: st.agentToken }
       });
       assert.equal(res.status, 500, `发送失败应回 500，实际 ${res.status} ${res.body}`);
       const err = String(res.json?.error ?? '');
@@ -406,7 +239,6 @@ await test('R15 /api/send/* 失败路径不抛作用域错误，并回滚发送�
 await test('R16 appendSocialV2Message 保留 kind/emojiId/summary/subType', async () => {
   const h = await bridgeHarness();
   try {
-    h.setMode('reserved2');
     const emojiId = 'f96bf2d2d93c3530d5eb148f55206fb1';
     // 形态与 extractMediaFromSegments 的产物一致（image 段 + emoji 字段 / mface 段）。
     h.appendSocialV2Message('group:456', '群友A', '看这个', '看这个', false, false, 'msg-1001', [

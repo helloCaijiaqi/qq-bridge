@@ -10,14 +10,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
-import { safeJoinLibrary, sanitizeUploadName, uniqueLibraryPath } from '../src/voice-core.js';
+import { safeJoinLibrary, sanitizeUploadName, uniqueLibraryPath } from '../src/media/voice-core.js';
 // 独立发语音工具在仓库上一级（不在本仓库里）：位置解析与"不在时怎么跳过"走共享口径。
 import { hasVoiceTool, skipVoiceTool, voiceToolDir, voiceToolPath } from './voice-tool-locator.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 // 独立发语音工具的入口（voice-gui.mjs / voice-cli.mjs / public/voice.html）都在仓库上一级的
-// voice-tool/；共享内核仍由本仓库 src/voice-core.js 提供。
+// voice-tool/；共享内核仍由本仓库 src/media/voice-core.js 提供。
 
 let pass = 0;
 let fail = 0;
@@ -146,7 +146,7 @@ console.log('## 共享库符号完整性（防"用了但没 import"）');
   // 由来：send-voice.mjs 曾经调用 formatDuration 却没 import（重构成 shim 后暴露），
   // 只有真的走 dry-run 才会炸。这里静态检查所有入口文件：凡是用了 voice-core 提供的
   // 符号，就必须在 import 列表里（或在本文件内有定义）。
-  const core = await import('../src/voice-core.js');
+  const core = await import('../src/media/voice-core.js');
   const symbols = Object.keys(core).filter((k) => typeof core[k] === 'function' || /^[A-Z_]+$/.test(k));
   // 入口清单：桥接侧用 ROOT 相对路径，独立工具侧用 voice-tool 相对路径（base 决定去哪找）。
   const entrypoints = [
