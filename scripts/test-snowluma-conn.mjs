@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  discoverSnowLumaConnection, persistToken, readOneBotHttpTokens, readOneBotTokens, snowLumaHomeCandidates
+  discoverSnowLumaConnection, persistSnowLumaEndpoint, persistToken, probeHttpToken, readOneBotHttpTokens, readOneBotTokens, snowLumaHomeCandidates
 } from '../src/integrations/snowluma-conn.js';
 // 独立发语音工具在仓库上一级（不在本仓库里）：位置解析与"不在时怎么跳过"走共享口径。
 import { hasVoiceTool, skipVoiceTool, voiceToolPath } from './voice-tool-locator.mjs';
@@ -115,6 +115,106 @@ console.log('## 独立工具确实用它（源码级）');
   const bridge = fs.readFileSync(path.join(ROOT, 'src', 'bridge.js'), 'utf8');
   ok(/healTokenIfStale/.test(bridge), 'bridge 有 token 自愈');
   ok(/persistToken/.test(bridge), 'bridge 会把有效 token 写回 config.json');
+  ok(/verifyTokenAfterOpen/.test(bridge), 'open 守卫已接线（先校验再写回）');
+  ok(/void verifyTokenAfterOpen\(\);/.test(bridge), 'open handler 调用守卫而不是盲写');
+  ok((bridge.match(/void syncTokenToFile\(\);/g) ?? []).length === 0,
+    'open handler 里不再有无守卫的盲写调用');
+  ok(/await syncTokenToFile\(\);/.test(bridge), '写回只在守卫校验通过后执行');
+  ok(/wsToken \|\| cfg\.snowluma\.accessToken/.test(bridge), 'bot 构造用 wsToken 回退链');
+  ok(/wsToken,\n        \.\.\.\(followEndpoint/.test(bridge) || /wsToken,$/.test(bridge) === false,
+    '自愈写回带 wsToken（源码包含 persistSnowLumaEndpoint wsToken 参数）');
+  ok(/persistSnowLumaEndpoint\([\s\S]*?wsToken/.test(bridge), '自愈写回带 wsToken');
+
+}
+
+
+console.log('## probeHttpToken：单次 HTTP token 校验');
+{
+  const realFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, init) => {
+      const tk = String(init?.headers?.authorization ?? '').replace('Bearer ', '');
+      if (tk === 'http-ok') {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok', retcode: 0, data: { user_id: 2817824053, nickname: '塞巴斯' } }) };
+      }
+      return { ok: false, status: 401, json: async () => ({ status: 'failed', retcode: 1401, wording: 'unauthorized' }) };
+    };
+    const good = await probeHttpToken({ baseUrl: 'http://127.0.0.1:3000', token: 'http-ok' });
+    ok(good.ok === true && good.uin === 2817824053, '有效 token → ok + 账号');
+    const bad = await probeHttpToken({ baseUrl: 'http://127.0.0.1:3000', token: 'ws-token-错放了' });
+    ok(bad.ok === false && bad.status === 401, '无效 token → 401（不抛异常）');
+    ok(JSON.stringify(bad).includes('ws-token-') === false, '返回值不含 token 本体（CWE-532）');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+console.log('## persistSnowLumaEndpoint：wsToken 双 token 持久化');
+{
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-cfg2-'));
+  const cfgPath = path.join(dir, 'config.json');
+  fs.writeFileSync(cfgPath, JSON.stringify({ snowluma: { httpUrl: 'http://127.0.0.1:3000', accessToken: 'http-old' } }, null, 2), 'utf8');
+  const r = persistSnowLumaEndpoint(cfgPath, { accessToken: 'http-new', wsToken: 'ws-new', wsUrl: 'ws://127.0.0.1:3001' });
+  ok(r.updated === true && r.changed.accessToken && r.changed.wsToken, '双 token 一起写盘');
+  const after = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  ok(after.snowluma.accessToken === 'http-new' && after.snowluma.wsToken === 'ws-new', 'config.json 双 token 就位');
+  const r2 = persistSnowLumaEndpoint(cfgPath, { accessToken: 'http-new', wsToken: 'ws-new', wsUrl: 'ws://127.0.0.1:3001' });
+  ok(r2.updated === false, '同值幂等（不写盘）');
+  fs.rmSync(dir, { recursive: true, force: true });
+}
+
+console.log('## 楔死场景（2026-11-17 事故的复现与根治）');
+{
+  // 复现：config.json 的 accessToken 里错放了 WS token。
+  // 楔死机制：WS 用它能连上（open 触发、永不 close），HTTP 全 401，旧逻辑永不自愈。
+  // 根治路径：open 后 probeHttpToken 校验失败 → discover → 双 token 写回。
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-home3-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sl-cfg3-'));
+  fs.mkdirSync(path.join(home, 'config'), { recursive: true });
+  const cfgPath = path.join(dir, 'config.json');
+  fs.writeFileSync(cfgPath, JSON.stringify({
+    snowluma: { homeDir: home, httpUrl: 'http://127.0.0.1:3000', accessToken: 'ws-2817824053' },
+  }, null, 2), 'utf8');
+  fs.writeFileSync(path.join(home, 'config', 'onebot_2817824053.json'), JSON.stringify({
+    networks: {
+      httpServers: [{ accessToken: 'http-2817824053', host: '127.0.0.1', port: 3000 }],
+      wsServers: [{ accessToken: 'ws-2817824053', host: '127.0.0.1', port: 3001 }],
+    },
+  }), 'utf8');
+
+  const realFetch = globalThis.fetch;
+  try {
+    // SnowLuma 现网行为：HTTP 口只认 http token，WS token 一律 401。
+    globalThis.fetch = async (url, init) => {
+      const tk = String(init?.headers?.authorization ?? '').replace('Bearer ', '');
+      if (tk === 'http-2817824053') {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok', retcode: 0, data: { user_id: 2817824053, nickname: '塞巴斯' } }) };
+      }
+      return { ok: false, status: 401, json: async () => ({ status: 'failed', retcode: 1401, wording: 'unauthorized' }) };
+    };
+
+    // 1) open 守卫的第一步：校验 config 里的 accessToken → 必须失败（楔死现场）。
+    const probe = await probeHttpToken({ baseUrl: 'http://127.0.0.1:3000', token: 'ws-2817824053' });
+    ok(probe.ok === false && probe.status === 401, '楔死现场：accessToken（错放 WS token）HTTP 校验 401');
+
+    // 2) 守卫触发自愈：discover 用配置 homeDir 扫 per-account 文件 → 找到真 HTTP token + 同账号 wsToken。
+    const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    const r = await discoverSnowLumaConnection({ cfg, timeoutMs: 500 });
+    ok(r.ok === true && r.token === 'http-2817824053', '自愈发现真 HTTP token');
+    ok(r.wsToken === 'ws-2817824053' && r.wsUrl === 'ws://127.0.0.1:3001', '同账号的 WS token/端口一并带回');
+
+    // 3) applyHealedTokens 的写回：双 token 落 config，下次启动 WS 直连不再 1006。
+    persistSnowLumaEndpoint(cfgPath, { accessToken: r.token, wsToken: r.wsToken, wsUrl: r.wsUrl });
+    const healed = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+    ok(healed.snowluma.accessToken === 'http-2817824053' && healed.snowluma.wsToken === 'ws-2817824053',
+      '写回后 accessToken=HTTP / wsToken=WS，楔死解除');
+    const reprobe = await probeHttpToken({ baseUrl: 'http://127.0.0.1:3000', token: healed.snowluma.accessToken });
+    ok(reprobe.ok === true, '写回后 HTTP 校验通过（发送链路恢复）');
+  } finally {
+    globalThis.fetch = realFetch;
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 console.log(`\n结果：${pass} 通过，${fail} 失败`);

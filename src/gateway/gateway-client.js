@@ -135,6 +135,9 @@ export function createGatewayClient({
   secret,
   transport = 'http',
   onAction = null,
+  // 网关下行通知（2026-11-17）：turn/status 等单向事件。旧网关不推这个类型，
+  // 回调缺省为 null 时静默忽略——新旧两端任意组合都兼容。
+  onNotify = null,
   timeoutMs = DEFAULT_TIMEOUT_MS,
   // 握手看门狗：ws 包在 401/半开握手时不保证触发 close，没有这个上限客户端会
   // 永久停在 "connecting"（ws 模式假死、auto 模式永久回落且熔断不打开）。
@@ -152,15 +155,22 @@ export function createGatewayClient({
   if (!TRANSPORTS.has(mode)) {
     throw new TypeError(`transport must be one of http|ws|auto (got "${mode}")`);
   }
-  const base = String(baseUrl).replace(/\/+$/, '');
+  // 凭据可热轮换（gateway.json 热加载）：签名/握手每次现算，读这里的当前值。
+  // baseUrl 变化时重建 http client（无状态）；transport 变化仍需重启——它决定
+  // 整条收发通道的形态（ws/http/auto 分支遍布本文件），热切换不值得。
+  let base = String(baseUrl).replace(/\/+$/, '');
+  let currentAdapterId = String(adapterId);
+  let currentPlatform = String(platform);
+  let currentSecret = String(secret);
 
-  const client = createHttpClient({
+  const makeHttpClient = () => createHttpClient({
     baseUrl: base,
     timeoutMs,
     logger,
-    sign: ({ body }) => signRequest({ secret, adapterId, body }),
+    sign: ({ body }) => signRequest({ secret: currentSecret, adapterId: currentAdapterId, body }),
     ...(fetchImpl ? { transport: fetchTransport(fetchImpl) } : {}),
   });
+  let client = makeHttpClient();
 
   let lastHealth = { at: 0, ok: false, detail: null };
 
@@ -172,6 +182,14 @@ export function createGatewayClient({
   let reconnectTimer = null;
   let breakerUntil = 0;
   let consecutiveWsFailures = 0;
+  // 2026-11-21 审计修复：半开连接检测——TCP 断但未发 close 帧时，wsOpen 恒真、
+  // health() 以「open 即健康」短路，inbound 全部超时。心跳口径：任何入站活动
+  // （message/pong）刷新 lastInboundAt；心跳 tick 发协议层 ping，90s 无活动判死
+  // （terminate → onClose → 走既有退避重连）。
+  let lastInboundAt = 0;
+  let heartbeatTimer = null;
+  const HEARTBEAT_INTERVAL_MS = 30_000;
+  const HEARTBEAT_STALE_MS = 90_000;
   /** @type {Array<{callId:string, resolve:Function, timer:any, dead:boolean}>} 发送顺序（旧网关 FIFO 兜底） */
   const pendingInbound = [];
   /** @type {Map<string, object>} callId → 在途请求（新网关精确关联） */
@@ -181,7 +199,7 @@ export function createGatewayClient({
 
   function wsEndpoint() {
     const target = base.replace(/^http/i, 'ws');
-    return `${target}/v1/ws?${signHandshake({ secret, adapterId, now }).toString()}`;
+    return `${target}/v1/ws?${signHandshake({ secret: currentSecret, adapterId: currentAdapterId, now }).toString()}`;
   }
 
   function sendFrame(payload) {
@@ -220,10 +238,10 @@ export function createGatewayClient({
       // 迟到/重复 ack：直接丢弃，绝不能落到别的在途请求上。
       if (!entry) return;
       dropPending(entry);
-      if (typeof ack.adapterId === 'string' && ack.adapterId !== String(adapterId)) {
+      if (typeof ack.adapterId === 'string' && ack.adapterId !== currentAdapterId) {
         entry.resolve({
           ok: false, status: 0, code: 'E_AUTH',
-          error: `inbound ack came from adapter "${ack.adapterId}", expected "${adapterId}"`,
+          error: `inbound ack came from adapter "${ack.adapterId}", expected "${currentAdapterId}"`,
         });
         return;
       }
@@ -291,6 +309,14 @@ export function createGatewayClient({
       case 'action':
         void handleActionFrame(message);
         return;
+      case 'turn/status':
+        // 回合结束推送：适配器用它释放唤醒防重入标志并回放暂存唤醒（尽力而为）。
+        try {
+          onNotify?.(message);
+        } catch (error) {
+          logger(`turn/status handler threw: ${error?.message ?? error}`);
+        }
+        return;
       case 'error':
         logger(`gateway ws error frame: ${message?.error?.code ?? 'E_INTERNAL'} ${message?.error?.message ?? ''}`);
         return;
@@ -325,6 +351,9 @@ export function createGatewayClient({
     if (socket !== sock) return;
     socket = null;
     wsOpen = false;
+    // 2026-11-21 审计修复：连接关闭即停心跳，避免定时器持有旧 socket 引用。
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
     failAllPending(reason);
     scheduleReconnect();
   }
@@ -358,10 +387,24 @@ export function createGatewayClient({
       wsOpen = true;
       reconnectAttempt = 0;
       consecutiveWsFailures = 0;
+      lastInboundAt = now();
+      // 2026-11-21 审计修复：启动心跳（半开连接检测）。定时器在 resetSocket 清理。
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        if (socket !== sock || !wsOpen) return;
+        try { sock.ping?.(); } catch { /* 失败由 onError/onClose 收口 */ }
+        if (now() - lastInboundAt > HEARTBEAT_STALE_MS) {
+          logger('gateway ws stale (no inbound for 90s) — terminating for reconnect');
+          try { sock.terminate?.(); } catch { /* 已断开 */ }
+          resetSocket(sock, 'ws stale heartbeat');
+        }
+      }, HEARTBEAT_INTERVAL_MS);
+      heartbeatTimer.unref?.();
       logger('gateway ws connected');
     };
     const onMessage = (data) => {
       if (socket !== sock) return;
+      lastInboundAt = now();
       handleFrame(typeof data === 'string' ? data : String(data));
     };
     const onClose = () => {
@@ -383,6 +426,8 @@ export function createGatewayClient({
       sock.on('message', (data) => onMessage(String(data)));
       sock.on('close', onClose);
       sock.on('error', onError);
+      // 2026-11-21 审计修复：pong 视为入站活性（心跳判死口径的一部分）。
+      sock.on('pong', () => { if (socket === sock) lastInboundAt = now(); });
       // 401/403 握手拒绝：ws 只发 unexpected-response，不发 error/close。
       sock.on('unexpected-response', (_req, res) => {
         if (socket !== sock) return;
@@ -464,7 +509,10 @@ export function createGatewayClient({
      * WS 已连接时短路为 ok（连接本身即存活证明，省一次 HTTP 往返）。
      */
     async health({ force = false } = {}) {
-      if (mode !== 'http' && wsOpen) {
+      // 2026-11-21 审计修复：open 短路加活性条件——半开连接（TCP 断未收 close）
+      // 下 wsOpen 恒真但无任何入站活动，不能报健康；stale 时继续走 HTTP 探测。
+      const wsStale = now() - lastInboundAt > HEARTBEAT_STALE_MS;
+      if (mode !== 'http' && wsOpen && !wsStale) {
         lastHealth = { at: now(), ok: true, detail: { transport: 'ws', ws: 'open' } };
         return { ok: true, cached: false, detail: lastHealth.detail, error: null };
       }
@@ -585,6 +633,44 @@ export function createGatewayClient({
 
     /** 当前 WS 是否可用（auto 判定口径：open 即可用）。 */
     get connected() { return wsOpen; },
+
+    /** 当前生效身份（热轮换后跟着变；日志与测试断言用）。 */
+    get identity() { return { adapterId: currentAdapterId, platform: currentPlatform, baseUrl: base }; },
+
+    /**
+     * 原地热轮换凭据（gateway.json 热加载）：换 baseUrl/adapterId/platform/secret，
+     * 立即断开旧连接 → 重连循环用新身份重新握手；退避与熔断清零（新身份是
+     * 新起点）。transport 变化不在轮换范围内（仍需重启，构造参数固定）。
+     * 非法新值整体拒收、保留旧值（fail-closed，避免半新半旧的中间态）。
+     */
+    rotate({ baseUrl: nextBase, adapterId: nextAdapterId, platform: nextPlatform, secret: nextSecret }) {
+      for (const [name, value] of [['baseUrl', nextBase], ['adapterId', nextAdapterId], ['platform', nextPlatform], ['secret', nextSecret]]) {
+        if (typeof value !== 'string' || value === '') {
+          throw new TypeError(`rotate: ${name} is required`);
+        }
+      }
+      if (nextSecret.length < 16) {
+        throw new TypeError('rotate: secret must be at least 16 characters');
+      }
+      base = String(nextBase).replace(/\/+$/, '');
+      currentAdapterId = String(nextAdapterId);
+      currentPlatform = String(nextPlatform);
+      currentSecret = String(nextSecret);
+      client = makeHttpClient();
+      reconnectAttempt = 0;
+      breakerUntil = 0;
+      consecutiveWsFailures = 0;
+      if (socket) {
+        // 先显式关闭旧 socket（resetSocket 只收口引用/在途请求，不负责关连接），
+        // 再走 resetSocket 清引用、拒掉在途 ack 并排重连（新 wsEndpoint 用新凭据）。
+        const old = socket;
+        try { old.close(1000); } catch { /* 已断开 */ }
+        try { old.terminate?.(); } catch { /* 已断开 */ }
+        resetSocket(old, 'gateway.json rotated: reconnecting with new identity');
+      } else if (mode !== 'http' && !closed) {
+        scheduleReconnect();
+      }
+    },
 
     /** 传输状态快照（控制台/健康面板用）。 */
     get transportState() {

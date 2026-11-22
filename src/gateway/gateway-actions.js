@@ -51,9 +51,11 @@ function safeEqualHex(a, b) {
 function createNonceCache({ windowMs, capacity, now }) {
   const seen = new Map();
   function prune(at) {
-    for (const [nonce, expiresAt] of seen) {
-      if (expiresAt > at) break;
-      seen.delete(nonce);
+    // 2026-11-21 audit fix: while forward-scan (no monotonic assumption).
+    while (seen.size > 0) {
+      const [firstKey, firstExpires] = seen.entries().next().value;
+      if (firstExpires > at) break;
+      seen.delete(firstKey);
     }
     while (seen.size > capacity) seen.delete(seen.keys().next().value);
   }

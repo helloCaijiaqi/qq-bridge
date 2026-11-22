@@ -618,3 +618,77 @@ test('边界：清单模式 send_text 超长被拒、回执 data 超 512KB 被�
   assert.equal(bigResult.ok, false);
   assert.equal(bigResult.error.code, 'E_TOO_LARGE');
 });
+
+// ── gateway.json 热轮换（rotate）──────────────────────────────────────────────
+// 消费端凭据运行中变更：旧连接被断开，重连循环用新身份重新握手（与 agent-gateway
+// 登记目录换 id/重注册的运维流程对应），全程无需重启。
+test('rotate：运行中换密钥 → 旧连接断开、新握手用新身份；非法新值拒收', async () => {
+  const NEW = 'rotated-gateway-secret-0123456789';
+  const ALT = 'svc-alt';
+  // hub 接受两套身份（新旧并存），并记录每次握手的 adapterId。
+  const identities = { [ADAPTER]: SECRET, [ALT]: NEW };
+  const handshakes = [];
+  const server = http.createServer(() => {});
+  const wss = new WebSocketServer({ noServer: true });
+  const sockets = new Set();
+  server.on('upgrade', (req, socket, head) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    if (url.pathname !== '/v1/ws') return;
+    const id = url.searchParams.get('adapterId');
+    const ts = Number(url.searchParams.get('ts'));
+    const nonce = url.searchParams.get('nonce');
+    const sign = url.searchParams.get('sign');
+    const secret = identities[id];
+    const bodyHash = crypto.createHash('sha256').update('').digest('hex');
+    const expected = secret
+      ? crypto.createHmac('sha256', secret).update(`${ts}\n${nonce}\n${bodyHash}`).digest('hex')
+      : null;
+    if (!secret || sign !== `v1=${expected}`) {
+      socket.on('error', () => {});
+      socket.end('HTTP/1.1 401 Unauthorized\r\nconnection: close\r\n\r\n');
+      return;
+    }
+    handshakes.push(id);
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      sockets.add(ws);
+      ws.on('close', () => sockets.delete(ws));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const client = createGatewayClient({
+    baseUrl,
+    adapterId: ADAPTER,
+    platform: 'qq',
+    secret: SECRET,
+    transport: 'ws',
+  });
+  try {
+    // 首连：旧身份握手成功。
+    for (let i = 0; i < 100 && !client.connected; i++) await sleep(20);
+    assert.equal(client.connected, true, '首连成功');
+    assert.equal(handshakes.at(-1), ADAPTER);
+
+    // 非法 rotate（过短密钥）：整体拒收，旧身份与连接原样保留。
+    assert.throws(
+      () => client.rotate({ baseUrl, adapterId: ALT, platform: 'qq', secret: 'short' }),
+      /at least 16 characters/,
+    );
+    assert.equal(client.identity.adapterId, ADAPTER, '拒收后旧身份保留');
+    assert.equal(client.connected, true, '拒收不断开现有连接');
+
+    // 合法 rotate：新身份立即生效，旧连接被断开，重连循环用新凭据重新握手。
+    client.rotate({ baseUrl, adapterId: ALT, platform: 'qq', secret: NEW });
+    assert.equal(client.identity.adapterId, ALT);
+    for (let i = 0; i < 100 && !(client.connected && handshakes.at(-1) === ALT); i++) await sleep(20);
+    assert.equal(handshakes.at(-1), ALT, '重连握手用了新 adapterId');
+    assert.equal(client.connected, true, '新身份握手成功');
+    assert.ok(handshakes.includes(ADAPTER) && handshakes.includes(ALT), '新旧两次握手都发生过');
+  } finally {
+    client.close();
+    for (const ws of sockets) ws.terminate();
+    await new Promise((resolve) => wss.close(resolve));
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

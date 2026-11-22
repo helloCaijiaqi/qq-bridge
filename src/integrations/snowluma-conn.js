@@ -102,6 +102,23 @@ async function probe(baseUrl, token, timeoutMs) {
 }
 
 /**
+ * 单次 HTTP token 校验（导出给 bridge 的 open 守卫用，2026-11-17）。
+ *
+ * 为什么导出：WS 连接成功 ≠ 发送可用——两个通道是两把不同的钥匙（见文件头）。
+ * bridge 在 bot.on('open') 后用它校验 config 里的 accessToken（HTTP token），
+ * 401 时立即触发自愈，不再等「WS close」——楔死场景下 WS 永远不会 close。
+ *
+ * 返回 { ok:true, uin } 或 { ok:false, status, retcode, wording, error }。
+ * 永不抛异常、永不返回 token 本体（调用方打日志只许打前 4 位）。
+ */
+export async function probeHttpToken({ baseUrl = null, token = null, timeoutMs = 5000 } = {}) {
+  const base = String(baseUrl || process.env.SNOWLUMA_HTTP_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '');
+  const r = await probe(base, token ?? '', timeoutMs);
+  if (r.ok) return { ok: true, uin: r.data?.user_id ?? null, baseUrl: base };
+  return { ok: false, status: r.status, retcode: r.retcode, wording: r.wording, error: r.error, baseUrl: base };
+}
+
+/**
  * 自动找出一条**能用**的连接（token + baseUrl + 账号信息）。
  *
  * @returns {Promise<{ok:boolean, token?:string, baseUrl?:string, self?:object,
@@ -194,7 +211,7 @@ export function persistToken(cfgPath, newToken) {
  * 只写传进来的字段，其它配置一律不动；全部一致时不写文件（幂等）。
  * 返回 { updated, changed: {...} }。
  */
-export function persistSnowLumaEndpoint(cfgPath, { accessToken, wsUrl, httpUrl } = {}) {
+export function persistSnowLumaEndpoint(cfgPath, { accessToken, wsToken, wsUrl, httpUrl } = {}) {
   let text = fs.readFileSync(cfgPath, 'utf8');
   // 读的时候必须吃掉 BOM，否则 JSON.parse 会抛「Unexpected token」。
   const hadBom = text.charCodeAt(0) === 0xFEFF;
@@ -210,6 +227,9 @@ export function persistSnowLumaEndpoint(cfgPath, { accessToken, wsUrl, httpUrl }
     next[key] = value;
   };
   consider('accessToken', accessToken);
+  // wsToken（2026-11-17）：WS 通道的独立钥匙。自愈成功后连同 accessToken 一起
+  // 持久化，下次启动 WS 直连正确 token——消除「每次启动先 1006 一次再自愈」。
+  consider('wsToken', wsToken);
   consider('wsUrl', wsUrl);
   consider('httpUrl', httpUrl);
   if (Object.keys(changed).length === 0) return { updated: false, changed: {} };

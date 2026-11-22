@@ -7,8 +7,9 @@
 - 入站消息与 proactive/wait 合成事件走 `POST /v1/inbound`（适配器 HMAC）；
   模型的发送/读取动作由网关回调 `POST /v1/actions`。回合文本**不产生任何出站动作**——
   要说话必须调用 `mcp__agent-gateway__chat_qq_send_*` 等工具（提示词里的「文本只是思考」因此是事实）。
-- `config.gateway` 的 `url` / `secret` / `adapterId` 缺一不可，缺失**启动即失败**；
-  网关不可达时入站如实失败，不落回本地。
+- 网关连接信息在**根目录 `gateway.json`**（不在 `config.json`）的 `url` / `secret`（或
+  `secretFile`）/ `id` 缺一不可，缺失**启动即失败**；网关不可达时入站如实失败，不落回本地。
+  `config.json` 里的旧 `gateway` 段会首次启动自动迁移，两处同时存在则拒绝启动。
 - 路由由网关 `GATEWAY_CONVERSATIONS` 裁决（未命中回 `routed:false`）；
   桥接侧 `config.allow/deny` 是发送动作的第二道闸（见下）。
 - 二代仿真是唯一行为形态：AI 通过工具自主看消息、发言、等待、设置唤醒与潜水，没有模式开关。

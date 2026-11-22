@@ -21,7 +21,9 @@ import { createGatewayActionsHandler } from '../src/gateway/gateway-actions.js';
 import { loadActionsManifest } from '../src/gateway/actions-manifest.js';
 import { createActionHandlers, createHttpDispatch } from '../src/gateway/action-handlers.js';
 import { createGatewayClient } from '../src/gateway/gateway-client.js';
+import { createGatewayWatcher } from '../src/gateway/gateway-watch.js';
 import { createWaitAction, createWaitRegistry } from '../src/gateway/wait-registry.js';
+import { loadGatewayConfig, migrateLegacyGatewaySection, GATEWAY_CONFIG_FILE } from '../src/core/gateway-config.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -29,15 +31,27 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'qq-audit-bridge-'));
   fs.mkdirSync(path.join(temp, 'src'));
   fs.mkdirSync(path.join(temp, 'state'));
+  // 网关连接信息在新布局里是独立的 gateway.json（config.json 不再有 gateway 段）。
+  // 夹具接受旧形状入参（adapterId/mode/state 等），翻译成 v1 文档后落盘，测试用例
+  // 本身不需要跟着改。
+  const { gateway: gatewayOverride, ...restConfig } = config;
   fs.writeFileSync(path.join(temp, 'config.json'), JSON.stringify({
     dsh: { authToken: 'fixture-only' }, ownerQQ: 123,
     allow: { private: ['123'], groups: ['456'] }, consolePort: 0,
-    consoleToken: 'fixture-console-token', ...config,
-    // 网关是唯一形态：夹具默认给一份可用配置，避免每个测试都重复写 url/secret。
-    gateway: {
-      url: 'http://127.0.0.1:7190', adapterId: 'qq-main', platform: 'qq',
-      secret: 'fixture-gateway-secret', ...(config.gateway ?? {}),
-    },
+    consoleToken: 'fixture-console-token', ...restConfig,
+  }));
+  const legacyGateway = gatewayOverride ?? {};
+  fs.writeFileSync(path.join(temp, 'gateway.json'), JSON.stringify({
+    v: 1,
+    kind: 'adapter',
+    id: legacyGateway.adapterId ?? legacyGateway.id ?? 'qq-main',
+    url: legacyGateway.url ?? 'http://127.0.0.1:7190',
+    platform: legacyGateway.platform ?? 'qq',
+    // 默认与旧行为一致：只走 HTTP（旧网关段缺省 transport=http）。
+    transport: legacyGateway.transport ?? 'http',
+    secret: legacyGateway.secret ?? 'fixture-gateway-secret',
+    ...(legacyGateway.mode !== undefined ? { mode: String(legacyGateway.mode) } : {}),
+    ...(legacyGateway.state !== undefined ? { state: String(legacyGateway.state) } : {}),
   }));
   if (savedState) fs.writeFileSync(path.join(temp, 'state/sessions.json'), JSON.stringify(savedState));
   // 额外状态文件（用于测试"启动时读到损坏/旧版文件"这类路径）。
@@ -216,9 +230,16 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     // 适配器侧网关客户端（真实实现）：不发真实网络请求——VM 里的 fetch 是
     // fakeFetch，测试可以从 calls.http 断言投出去的信封（wait 事件回推靠它）。
     createGatewayClient,
+    // gateway.json 热加载监视器（真实实现）：只在 temp 夹具目录上轮询，
+    // StatWatcher 已 unref，不阻塞 VM 用例退出。
+    createGatewayWatcher,
     // wait 排起登记：纯状态机，真实注入（bridge.js 的 import 被剥掉后靠这里提供绑定）。
     createWaitAction,
     createWaitRegistry,
+    // gateway.json 读取器与迁移：bridge.js 的 import 被剥掉后靠这里提供绑定。
+    loadGatewayConfig,
+    migrateLegacyGatewaySection,
+    GATEWAY_CONFIG_FILE,
     // 桥接的出图出口会调归一化（体积/动图抽帧）：VM 里必须能拿到这几个函数。
     normalizeImageForModel: mediaNormalize.normalizeImageForModel,
     sniffImage: mediaNormalize.sniffImage,

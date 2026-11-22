@@ -180,11 +180,5 @@
       "normalizeTimeoutMs": 25000
     }
   },
-  "gateway": {
-    "url": "http://127.0.0.1:7190",
-    "adapterId": "qq-main",
-    "secret": "",
-    "transport": "http",
-    "note": "网关是桥接的唯一出口：入站消息与 proactive/wait 合成事件走 POST /v1/inbound（transport≠http 时走 WS 帧 /v1/ws），模型的发送/读取动作由网关回调（HTTP POST /v1/actions，或 transport≠http 时的 WS action 帧）；回合文本不产生任何出站动作，要说话必须调用 mcp__agent-gateway__chat_qq_send_* 工具。桥接不建本地 agent 会话，网关不可达时如实失败而非回退本地。白名单路由由网关 GATEWAY_CONVERSATIONS 裁决，桥接侧 config.allow/deny 只是发送动作的第二道闸。url/secret/adapterId 三项缺一不可（缺失启动即失败）；secret 必须与网关侧一致。transport 三态：http=只走 HTTP（默认，现行为零变化）；ws=强制 WS（连接未就绪/超时即如实失败，不回落，联调真链路用）；auto=WS 优先、失败回落 HTTP 重投一次（幂等键兜底），连续 3 次失败熔断 2 分钟。启用 WS 的部署前提：网关 GATEWAY_WS=on + adapters.json 已登记该 adapterId + secret 两侧一致（否则握手 E_AUTH）。WS 帧约定：inbound 带 callId（ack 原样回带，桥接按 callId 关联，迟到 ack 丢弃；旧网关不回带时退回 FIFO）；动作帧带帧级签名 bodyHash（与 HTTP /v1/actions 同公式，验签不再依赖两端 JSON 逐字节一致）。握手有 10s 看门狗，401/挂起会自动收口重连。"
-  }
+  "_note": "网关连接配置已独立为 gateway.json（见 gateway.example.json），本文件不再包含 gateway 段。"
 }

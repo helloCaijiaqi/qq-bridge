@@ -4,6 +4,10 @@ node_modules/
 
 # Runtime state and local config (never publish)
 state/
+
+gateway.json
+# 真实运行配置：含 consoleToken（真实控制台令牌）与 ownerQQ，绝不入库。
+# （gateway.example.json / config.example.json 是脱敏示例，可入库。）
 config.json
 *.log
 *.bak

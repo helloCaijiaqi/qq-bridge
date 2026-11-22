@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node src/bridge.js",
-    "test:gateway": "node scripts/test-gateway-contracts.mjs && node --test scripts/test-gateway-state.mjs scripts/test-wait-registry.mjs scripts/test-wait-pushback.mjs scripts/test-wake-synthetic.mjs scripts/test-action-layer.mjs scripts/test-gateway-ws.mjs scripts/test-lifecycle.mjs",
+    "test:gateway": "node scripts/test-gateway-contracts.mjs && node --test scripts/test-gateway-config.mjs scripts/test-gateway-watch.mjs scripts/test-gateway-state.mjs scripts/test-wait-registry.mjs scripts/test-wait-pushback.mjs scripts/test-wake-synthetic.mjs scripts/test-action-layer.mjs scripts/test-gateway-ws.mjs scripts/test-lifecycle.mjs",
     "test:audit": "node scripts/test-audit.mjs",
     "test:token": "node scripts/test-token-economy.mjs && node scripts/test-reply-wait.mjs && node scripts/test-qq-model-view.mjs",
     "test:hardening": "node scripts/test-hardening.mjs",
@@ -39,11 +39,17 @@
     "postinstall": "node scripts/patch-snowluma-sdk.mjs",
     "privacy-scan": "node scripts/privacy-scan.mjs",
     "diagnose:acl": "node scripts/diagnose-acl.mjs",
-    "harden-acl": "node scripts/harden-state-acl.mjs"
+    "harden-acl": "node scripts/harden-state-acl.mjs",
+    "install:preset": "node scripts/install-preset.mjs",
+    "build:preset-patches": "node scripts/build-agent-preset-patches.mjs",
+    "audit:tool-names": "node scripts/preset-tool-audit.mjs",
+    "test:preset-tools": "node scripts/test-preset-tool-names.mjs",
+    "setup-dsh": "node scripts/install-preset.mjs"
   },
   "dependencies": {
     "@snowluma/sdk": "^1.14.20",
     "axios": "^1.7.9",
+    "js-yaml": "^4.3.2",
     "ws": "^8.22.2"
   }
 }

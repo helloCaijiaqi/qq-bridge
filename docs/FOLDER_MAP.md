@@ -36,6 +36,8 @@
 > 精简重构已删除的目录：`dsh/`（agent preset 模板）、`plugins/`（DSH 插件）、`roles/`（人格卡）、
 > `audio/`（语音库，用户自建）——preset/人格/记忆/黑话全部上移到网关与智能体侧。
 > 语音库目录在开启 AI 发语音时按 `socialV2.voice.dir` 自行创建。
+> 2026-11-16 补充：若本地仍存在 `plugins/`，它是**历史归档（未入库）**——DSH 侧 preset/插件已自托管在
+> `~/.dsh/plugins/`，仓库这份不再被任何 junction 指向，可随时手工删除。
 
 ### `src/` 内部结构
 
@@ -43,7 +45,7 @@
 
 | 子目录 | 职责 | 包含 |
 | --- | --- | --- |
-| `core/` | 会话路由基础设施（**当前未接线**：bridge.js 仍读全局 mode，见文件头 NOT WIRED 说明） | `session-router.mjs`（+ 同目录测试） |
+| `core/` | 网关接线配置：加载 / 迁移 / 热加载 `gateway.json`（纯适配器形态下唯一的核心配置件） | `gateway-config.js` |
 | `gateway/` | 与 agent-gateway 的全部契约（HTTP + WS 双栈：`gateway.transport=http|ws|auto`，WS 连接管理收在 client 内部） | `gateway-client.js`、`gateway-actions.js`、`action-handlers.js`、`actions-manifest.js`、`actions-manifest.json`、`actions-manifest.schema.json`、`wait-registry.js` |
 | `chat/` | 聊天内容加工 | `md-to-plain.js`、`qq-model-view.js`、`forward.js`、`sensitive.js`、`sticker-lib.js`、`v2-wait.js` |
 | `media/` | 语音、图片与安全传输 | `voice-core.js`、`send-voice-lib.js`、`media-normalize.js`、`safe-fetch.js` |

@@ -40,7 +40,8 @@ function sayAlways(msg) { console.log(msg); }
 // state/ 之外的凭据文件：config.json 里是真实的 SnowLuma OneBot accessToken ——
 // 拿到它等于拿到 QQ 账号的收发控制权。它跟 state/ 一样在仓库树里，继承来的 ACE 同样
 // 对 BUILTIN\Users 可读，所以一并收紧。
-const SECRET_FILES = ['config.json']
+// gateway.json 同样含凭据（secret，或指向 *.secret 的路径）：权限必须一起收紧。
+const SECRET_FILES = ['config.json', 'gateway.json']
   .map((name) => path.join(ROOT, name))
   .filter((file) => fs.existsSync(file));
 

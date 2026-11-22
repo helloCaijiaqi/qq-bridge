@@ -26,7 +26,8 @@ QQ 消息 ──► SnowLuma（OneBot v11 WS）──► 本桥接进程 ──�
 > - 入站消息与 proactive/wait 合成事件统一投 `POST /v1/inbound`（适配器 HMAC 签名）；
 >   模型的发送/读取动作由网关回调 `POST /v1/actions`；回合文本**不产生任何出站动作**——
 >   要说话必须调用 `mcp__agent-gateway__chat_qq_send_message` 等工具。
-> - `config.gateway` 的 `url` / `secret` / `adapterId` 三项**缺一不可，缺失启动即失败**
+> - 网关连接信息在**根目录 `gateway.json`**（不在 `config.json` 里）的 `url` / `secret`（或 `secretFile`）/ `id` **缺一不可，缺失启动即失败**
+> - `config.json` 里如果还留着旧的 `gateway` 段，首次启动会**自动迁移**到 `gateway.json` 并删掉旧段；两处同时存在则拒绝启动
 >   （绝不出现「启动成功但静默丢消息」）；网关不可达时入站**如实失败**（不落回本地）。
 > - 白名单是**双闸**：路由由网关 `GATEWAY_CONVERSATIONS` 裁决，桥接侧 `config.allow/deny`
 >   对发送动作做第二道校验。
@@ -76,9 +77,6 @@ npm install        # 安装依赖（postinstall 会自动修补 @snowluma/sdk �
 
 | 字段 | 说明 |
 | --- | --- |
-| `gateway.url` | agent-gateway 地址，默认 `http://127.0.0.1:7190`。**必填**，缺失启动即失败 |
-| `gateway.secret` | 适配器 HMAC 密钥，必须与网关侧一致。**必填** |
-| `gateway.adapterId` | 本适配器在网关侧的注册 id，默认 `qq-main`。**必填** |
 | `snowluma.wsUrl` | SnowLuma OneBot **WebSocket** 地址（如 `ws://127.0.0.1:3001`） |
 | `snowluma.httpUrl` | OneBot **HTTP API** 地址（如 `http://127.0.0.1:3000`）；不要填 WebSocket 端口，否则会报 HTTP 426 |
 | `snowluma.accessToken` | OneBot accessToken，未配置留空 |
@@ -97,9 +95,47 @@ npm install        # 安装依赖（postinstall 会自动修补 @snowluma/sdk �
 
 > ⚠️ `allowAllWhenEmpty: true` 表示「白名单没填就全部放行」——把 agent 接入 QQ 等于把账号控制权交给了模型，建议先填白名单。注意网关侧的 `GATEWAY_CONVERSATIONS` 才是路由裁决者：桥接白名单只拦「发出去」。
 
+## 网关配置（`gateway.json`）
+
+**连接网关的配置不在 `config.json` 里**，而是在仓库根目录的 `gateway.json`。原因很实际：`config.json` 会被多处整份重写（白名单/令牌编辑、SnowLuma token 与端点自愈回写），把地址和密钥放在那里，等于放在一个随时会被覆盖的文件里。
+
+三步：
+
+```bash
+# ① 网关侧生成（agent-gateway 仓库）
+npm run secrets:gen -- --id qq-main
+
+# ② 复制到本仓库根目录，保持文件名 gateway.json
+#    state/gateway/handoff/qq-main.gateway.json  →  ./gateway.json
+
+# ③ 启动（启动日志会打印用的是哪个文件、什么身份、密钥从哪来）
+npm start
+```
+
+文件格式见 `gateway.example.json`：
+
+| 字段 | 说明 |
+| --- | --- |
+| `v` | 固定 `1`，格式版本 |
+| `id` | 本适配器在网关侧的注册 id（= `adapters.json` 的 id）。**必填**，与网关逐字一致 |
+| `url` | **网关基址**（默认 `http://127.0.0.1:7190`）。⚠️ 不是本服务地址。**必填** |
+| `transport` | `http` / `ws` / `auto`（默认 `auto`）；`http` 只走 HTTP，`ws` 强制 WS（失败如实失败），`auto` WS 优先失败回落 |
+| `secretFile` | 密钥文件路径（网关 `state/gateway/qq-main.secret`）。相对路径按 `gateway.json` 所在目录解析 |
+| `secret` | 内联明文（跨机复制用，`--inline-secret` 生成）；与 `secretFile` 并存时**以 `secretFile` 为准**并告警 |
+| `platform` | 适配器平台，默认 `qq` |
+| `mode` / `state` | P4 会话状态镜像开关（两者同时 `on` 才生效），迁移时原样保留 |
+
+- 文件缺失或字段非法 → **启动即失败**，错误信息会给出该补什么、去哪生成。
+- **热加载（2026-11-14 起）**：运行中把网关新生成的 `handoff/<新id>.gateway.json` 复制到本仓根
+  目录覆盖 `gateway.json`，≤2s 自动生效——桥接原地换密钥并**用新身份自动重连网关，无需重启**。
+  文件缺失/非法时**保留最后有效凭据**继续运行（告警日志留痕；网关侧若已注销旧身份会握手 401），
+  修复后自动恢复。例外：`transport`（ws/http/auto）变更仍需重启——它决定整条收发通道的形态。
+- `config.json` 里遗留的 `gateway` 段：首次启动自动迁移到 `gateway.json` 并从 `config.json` 删除（其余键一字不动）；两处同时存在则报错，提示删掉旧段。
+- `gateway.json` 含凭据，已在 `.gitignore` 里，也会被 `npm run harden-acl` 收紧权限、被 `privacy-scan` 拒绝入库。
+
 ## 完整启动流程（从零开始）
 
-1. **启动 agent-gateway**，在网关侧注册适配器（记下 `adapterId` 与 `secret`），并配置 `GATEWAY_CONVERSATIONS` 路由白名单。
+1. **启动 agent-gateway**，在网关侧注册适配器（记下 `id` 与 `secret`），并配置 `GATEWAY_CONVERSATIONS` 路由白名单。
 2. **装桥接并复制配置**
    ```bash
    git clone https://github.com/helloCaijiaqi/qq-bridge.git
@@ -107,7 +143,8 @@ npm install        # 安装依赖（postinstall 会自动修补 @snowluma/sdk �
    npm install
    ```
    Windows CMD 用 `copy config.example.json config.json`，其他平台用 `cp config.example.json config.json`。
-   填好 `gateway` 三项；**示例模板里 `allow.private` / `allow.groups` 是空数组**——空白名单 + `allowAllWhenEmpty: false` 时桥接拒绝一切发送（这是刻意的 fail-closed 默认值）。
+   再把网关生成的 `state/gateway/handoff/qq-main.gateway.json` 复制成根目录的 `gateway.json`（见上一节）。
+   **示例模板里 `allow.private` / `allow.groups` 是空数组**——空白名单 + `allowAllWhenEmpty: false` 时桥接拒绝一切发送（这是刻意的 fail-closed 默认值）。
 3. **下载并解压 SnowLuma**
    - 下载：<https://github.com/SnowLuma/SnowLuma/releases/latest> 选 `SnowLuma-v<版本>-win-x64.zip`（完整版，自带 Node 运行时；Lite 版需本机 Node 22.13+）
    - 解压到任意目录（例如 `C:\SnowLuma`），双击 `launcher.bat`

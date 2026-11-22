@@ -36,7 +36,7 @@ QQ ── OneBot WS ──> qq-bridge ──┐
 | 回合投递 | 已移除 | 网关**不再**把回合文本回调适配器：模型必须调用 `chat_qq_send_*` 工具；`/v1/turns` 的 `result.tools` 记录 calls/sent | 回滚 = `git revert` + 重启（没有运行期开关） |
 | `adapters.json` 的 `enabled` | `true`/`false` | 长期摘除某平台适配器 | 改回 `true` |
 
-配套参数：`GATEWAY_CONTEXT_BUDGET`、`GATEWAY_MEMORY_URL/TOKEN/TIMEOUT_MS`、`GATEWAY_MCP_TOKEN`、
+配套参数：`GATEWAY_CONTEXT_BUDGET`、`GATEWAY_MEMORY_URL/TOKEN/TIMEOUT_MS`、`GATEWAY_MCP_BUS_TOKEN`、
 `GATEWAY_TOOL_MAX_CALLS_PER_TURN`、`GATEWAY_TOOL_CALL_TIMEOUT_MS`、`GATEWAY_REPLAY_WINDOW_MS`、
 `GATEWAY_DSH_BASE_URL/TOKEN/TIMEOUT_MS/ALLOW_REMOTE`、`GATEWAY_PRESET/PROVIDER/MODEL/WORKSPACE_DIR`、
 `GATEWAY_TURN_TIMEOUT_MS`。
@@ -94,7 +94,7 @@ curl -s -H "x-adapter-id: qq-main" ... http://127.0.0.1:7190/v1/metrics   # 需 
 | 动作回执被判失败 | 网关日志 `non-conforming receipt` | 适配器必须回 `{v:1, actionId, ok}` 且 actionId 一致 |
 | 微信推送 401 | `X-Wx-Signature` 三头是否齐；`WX_PLATFORM_TOKEN` 与框架是否一致 | 对齐 token；时间窗 `WX_PUSH_WINDOW_MS` |
 | 微信推送 502 | 适配器到网关不通（`WX_GATEWAY_URL`） | 先修网关，框架会重试 |
-| `/v1/tools` 503 | `GATEWAY_TOOLS`、`GATEWAY_MCP_TOKEN` | 打开开关并给 mcp-bus 同一密钥 |
+| `/v1/tools` 503 | `GATEWAY_TOOLS`、`GATEWAY_MCP_BUS_TOKEN` | 打开开关并给 mcp-bus 同一密钥 |
 | `/v1/state*` 503 | `GATEWAY_STATE`；适配器 `gateway.state` | 打开；P4 灰度前不删本地 `social-v2.json` |
 | turn 一直不结束 | DSH 连接（`mux connection failed`）、preset 是否存在于 DSH | 修 DSH；`GATEWAY_TURN_TIMEOUT_MS` 到点会返回 error 而不是挂住 |
 

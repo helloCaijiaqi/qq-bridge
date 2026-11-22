@@ -13,6 +13,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { SnowLumaWebSocketClient, text } from '@snowluma/sdk';
 import { createGatewayClient } from './gateway/gateway-client.js';
+import { createGatewayWatcher } from './gateway/gateway-watch.js';
 import { createGatewayActionsHandler } from './gateway/gateway-actions.js';
 import { createActionHandlers, createHttpDispatch } from './gateway/action-handlers.js';
 import { loadActionsManifest } from './gateway/actions-manifest.js';
@@ -24,8 +25,9 @@ import { compactModelMessage, describeAge } from './chat/qq-model-view.js';
 import { safeFetchBuffer, looksLikeImageBuffer } from './media/safe-fetch.js';
 import { normalizeImageForModel } from './media/media-normalize.js';
 import { AUDIO_EXTS, cleanupTemp, describeAudio, inspectAudio, listAudioFiles, parseTargetKey, processAudioVolume, resolveAudioProcessing, resolveAudioSource, safeJoinLibrary } from './media/send-voice-lib.js';
-import { discoverSnowLumaConnection, persistSnowLumaEndpoint, persistToken } from './integrations/snowluma-conn.js';
+import { discoverSnowLumaConnection, persistSnowLumaEndpoint, persistToken, probeHttpToken } from './integrations/snowluma-conn.js';
 import { hardenDir, manualDirCommand } from './ops/state-acl.mjs';
+import { loadGatewayConfig, migrateLegacyGatewaySection, GATEWAY_CONFIG_FILE } from './core/gateway-config.js';
 import { extractForwardIds, forwardIdFromData, sanitizeForwardId, formatForwardResponse } from './chat/forward.js';
 import {
   loadStickerStore,
@@ -347,8 +349,18 @@ function loadConfig() {
   const p = path.join(ROOT, 'config.json');
   const file = readJsonSafe(p, null, true);
   if (!file || typeof file !== 'object' || Array.isArray(file)) throw new Error(`配置格式错误：${p}`);
+  // 网关连接信息独立成 gateway.json：先把 config.json 的遗留 gateway 段迁出去，
+  // 再只从新文件读——config.json 会被多处整份回写（白名单/令牌编辑、SnowLuma
+  // 自愈），地址与密钥寄居其中本来就有被覆盖丢失的风险。
+  migrateLegacyGatewaySection({ root: ROOT, writeJson: atomicWriteJson, logger: log });
   const cfg = {
-    snowluma: { wsUrl: 'ws://127.0.0.1:3001', accessToken: '', ...(file.snowluma ?? {}) },
+    // 双 token 语义（2026-11-17 根治楔死循环）：
+    //   accessToken = **HTTP API token**（发消息等 Bearer，9 处调用点）；
+    //   wsToken     = **WS 连接 token**（缺省回退 accessToken，兼容旧配置）。
+    // SnowLuma 侧两个通道本就是两把不同的钥匙（onebot_<uin>.json 各存一份）；
+    // 曾经共用一个字段 + open 后盲写回 config，字段里是 WS token 时会楔死：
+    // WS 一直正常 → 自愈（只在 WS close 触发）永不运行 → 发送永远 401。
+    snowluma: { wsUrl: 'ws://127.0.0.1:3001', accessToken: '', wsToken: null, ...(file.snowluma ?? {}) },
     ownerQQ: normalizeOwnerQQ(file.ownerQQ),
     allow: {
       private: normalizeIdList(file.allow?.private ?? file.allow?.privates ?? []),
@@ -365,13 +377,9 @@ function loadConfig() {
     consoleToken: file.consoleToken ?? '',
     // 唯一形态：桥接只是 QQ 侧适配器，入站投 /v1/inbound，动作由网关回调 /v1/actions。
     // 没有本地 DSH 直连、没有回滚形态；url / secret / adapterId 缺失会在启动时直接失败。
-    gateway: {
-      url: 'http://127.0.0.1:7190',
-      adapterId: 'qq-main',
-      platform: 'qq',
-      secret: '',
-      ...(file.gateway ?? {})
-    },
+    // 数据来源是 gateway.json（不再是 config.json）：形状保持 url/adapterId/platform/
+    // transport/secret，下游消费点不需要知道载体变了。
+    gateway: loadGatewayConfig({ root: ROOT, logger: log }),
     security: {
       interceptNotify: true,
       ...(file.security ?? {})
@@ -599,47 +607,42 @@ function loadConfig() {
       : 2000;
   }
 
-  // 回滚开关（mode / delivery / state / conversations）已废弃：配置里还留着就明确告警，
-  // 避免用户误以为它们仍在生效——桥接只有网关这一种形态。
-  const legacyGatewayKeys = ['mode', 'delivery', 'state', 'conversations']
-    .filter((k) => (file.gateway ?? {})[k] !== undefined);
-  if (legacyGatewayKeys.length) {
-    log(`⚠️ config.gateway 的 ${legacyGatewayKeys.join(' / ')} 已废弃并被忽略：桥接只支持网关形态（url / secret / adapterId）`);
-  }
-
   return cfg;
 }
 
 /**
  * 网关是桥接的唯一出口：配置缺失时**启动即失败**，而不是启动成功后静默丢弃所有消息。
- * 只校验「能不能发出去」的最小三元组；网关侧的白名单/路由不在本进程职责内。
+ *
+ * 形状校验的主要责任已在 loadGatewayConfig 里（它要给出指向 gateway.json 的可操作
+ * 错误）；这里再兜一层，只拦「有人绕过读取器直接塞 cfg」的情形。
  */
 function assertGatewayConfig(cfg) {
   const g = cfg.gateway ?? {};
+  const file = g.file ?? path.join(ROOT, GATEWAY_CONFIG_FILE);
   const missing = [];
-  if (!String(g.url ?? '').trim()) missing.push('gateway.url');
-  if (!String(g.secret ?? '').trim()) missing.push('gateway.secret');
-  if (!String(g.adapterId ?? '').trim()) missing.push('gateway.adapterId');
+  if (!String(g.url ?? '').trim()) missing.push('url');
+  if (!String(g.secret ?? '').trim()) missing.push('secret');
+  if (!String(g.adapterId ?? '').trim()) missing.push('adapterId');
   if (missing.length) {
     throw new Error(
       `缺少网关配置：${missing.join('、')}。桥接只支持网关形态（入站 POST /v1/inbound、动作回调 POST /v1/actions），`
-      + '请在 config.json 的 gateway 段补齐 url / secret / adapterId 后重启。'
+      + `请在 ${file} 中补齐后重启（该文件由 agent-gateway 生成，复制到仓库根目录即可）。`
     );
   }
   let parsed;
   try {
     parsed = new URL(String(g.url));
   } catch {
-    throw new Error(`gateway.url 不是合法 URL：${g.url}`);
+    throw new Error(`${file} 的 url 不是合法 URL：${g.url}`);
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`gateway.url 只支持 http/https：${g.url}`);
+    throw new Error(`${file} 的 url 只支持 http/https：${g.url}`);
   }
   // 传输三态 fail-closed：非法值启动即失败（与上面三缺一同口径，不静默降级为默认值）。
   const transport = String(g.transport ?? 'http');
   if (!['http', 'ws', 'auto'].includes(transport)) {
     throw new Error(
-      `gateway.transport 只支持 http|ws|auto：${g.transport}。`
+      `${file} 的 transport 只支持 http|ws|auto：${g.transport}。`
       + 'http=只走 HTTP（现状）、ws=强制 WS（失败如实失败）、auto=WS 优先失败回落 HTTP。'
     );
   }
@@ -981,6 +984,9 @@ async function main() {
   const cfg = loadConfig();
   // 先做网关校验再落任何副作用（目录、锁、端口）：配置不全时进程直接退出并说明缺什么。
   assertGatewayConfig(cfg);
+  // 排障第一现场：哪个文件、哪个身份、密钥从哪来（只给形态与路径，不打印明文）。
+  log(`网关配置：${cfg.gateway.file}（id=${cfg.gateway.adapterId} transport=${cfg.gateway.transport} `
+    + `auth=${cfg.gateway.auth}${cfg.gateway.secretFile ? ` file=${cfg.gateway.secretFile}` : ''}）`);
   fs.mkdirSync(STATE_DIR, { recursive: true });
   hardenStateDirAcl();
   acquireLock();
@@ -1673,6 +1679,27 @@ async function main() {
   // 动作回投的双入口共用同一个 gatewayActions 实例（receipts 幂等表共享）：
   // 这里先声明，handler 在下方装配（HTTP /v1/actions 与 WS action 帧都走它）。
   let gatewayActions = null;
+  // gateway.json 热加载：换密钥/重注册后把网关新生成的 handoff 复制到本仓根目录，
+  // ≤2s 自动生效——rotate 新身份 + 断开旧连接，重连循环用新凭据重新握手，无需重启。
+  // 文件缺失/非法时保留最后有效凭据（消费端不自断身份），告警留给排障。
+  // transport 变化不在热轮换范围（仍需重启）。
+  const gatewayWatcher = createGatewayWatcher({
+    root: ROOT,
+    logger: log,
+    onChange: (config) => {
+      try {
+        gatewayClient.rotate({
+          baseUrl: config.url,
+          adapterId: config.adapterId,
+          platform: 'qq',
+          secret: config.secret,
+        });
+        log(`gateway.json 已热轮换：新身份 ${config.adapterId}，正在用新凭据重连网关`);
+      } catch (error) {
+        log(`gateway.json 热轮换失败（保留旧凭据继续运行）：${error?.message ?? error}`);
+      }
+    },
+  });
   const gatewayClient = createGatewayClient({
     baseUrl: cfg.gateway.url,
     adapterId: cfg.gateway.adapterId,
@@ -1680,6 +1707,16 @@ async function main() {
     secret: cfg.gateway.secret,
     transport: gatewayTransport,
     ...(gatewayTransport === 'http' ? {} : {
+      // 回合结束推送（网关 runtime 在 turn finalized 后 sendTo 下来）。网关
+      // sessionKey 是 qq:[svc-x:]kind:id，bridge 本地 key 是 kind:id——映射后释放。
+      onNotify: (message) => {
+        if (message?.type !== 'turn/status') return;
+        const status = String(message.status ?? '');
+        if (status === 'running') return;
+        const parts = String(message.sessionKey ?? '').split(':');
+        const localKey = parts.length >= 3 ? parts.slice(-2).join(':') : (parts.length === 2 ? parts.join(':') : null);
+        releasePendingWake(localKey);
+      },
       onAction: async (envelope, sign) => {
         if (!gatewayActions) {
           return { v: 1, actionId: envelope?.actionId, ok: false, error: { code: 'E_DISABLED', message: 'actions handler is not assembled yet' } };
@@ -1700,6 +1737,7 @@ async function main() {
     for (const signal of ['SIGINT', 'SIGTERM']) {
       process.once(signal, () => {
         try { gatewayClient.close(); } catch { /* 已关闭 */ }
+        try { gatewayWatcher.stop(); } catch { /* 已关闭 */ }
       });
     }
   }
@@ -1956,15 +1994,25 @@ async function main() {
   const promptQueues = new Map(); // key -> { queue: [], running: false }：每个 QQ 会话串行投递 DSH prompt，保证 turn 顺序
 
 
-  // 唤醒“防卡死”租约：正常应在 turn/end 时删除 pendingWakeKeys；若 DSH 接受了但一直没回合结束，
-  // 30 分钟后强制解除 busy 标记，避免该会话永久无法被唤醒。
+  // 唤醒“防卡死”租约：正常路径由网关的 turn/status 推送触发 releasePendingWake
+  // （见下），租约只兜「推送丢失/网关太老不推」的场景——2 分钟自愈，避免再出现
+  // 「每次成功唤醒后 30 分钟内所有新消息被静默暂存」的楔死（2026-11-17 事故）。
   function armPendingWakeLease(key) {
     const old = pendingWakeLeaseTimers.get(key);
     if (old) clearTimeout(old);
     const timer = setTimeout(() => {
       pendingWakeKeys.delete(key);
       pendingWakeLeaseTimers.delete(key);
-    }, 30 * 60 * 1000);
+      log(`busy 租约到期（无 turn/status），兜底释放 ${key}`);
+      // 2026-11-21 审计修复：兜底释放同样要回放暂存唤醒——否则租约自愈后，
+      // 租约期间暂存的唤醒消息永远停留在暂存区（要等下一次正常回合结束才
+      // 回放，而此刻正是没有回合的时刻），表现为「发了消息但机器人半天不理」。
+      try {
+        replayPendingWakeReasonsV2(key);
+      } catch (error) {
+        log(`租约兜底回放暂存唤醒失败（${key}）：${error?.message ?? error}`);
+      }
+    }, 2 * 60 * 1000);
     timer.unref?.();
     pendingWakeLeaseTimers.set(key, timer);
   }
@@ -1976,6 +2024,25 @@ async function main() {
   function clearAllPendingWakeLeases() {
     for (const t of pendingWakeLeaseTimers.values()) clearTimeout(t);
     pendingWakeLeaseTimers.clear();
+  }
+
+  /**
+   * 回合结束释放（2026-11-17）：收到网关 turn/status 终态推送时调用。
+   * 解除唤醒防重入（pendingWakeKeys）并回放暂存的唤醒原因——此前这段逻辑
+   * 缺失（注释里的「turn/end 时删除」并不存在，replayPendingWakeReasonsV2
+   * 也是零调用的死代码），每次成功唤醒后 30 分钟内该会话所有新消息被静默
+   * 暂存。幂等：key 不在集合里直接返回。
+   */
+  function releasePendingWake(key) {
+    if (!key || !pendingWakeKeys.has(key)) return;
+    pendingWakeKeys.delete(key);
+    disarmPendingWakeLease(key);
+    log(`回合结束，释放会话 busy 标记 ${key}，检查暂存唤醒…`);
+    try {
+      replayPendingWakeReasonsV2(key);
+    } catch (error) {
+      log(`暂存唤醒回放失败（${key}）：${error?.message ?? error}`);
+    }
   }
 
   let snowlumaWatchStarted = false; // SnowLuma 上游健康探测只启动一次（见 startSnowlumaWatch）
@@ -6469,12 +6536,25 @@ async function main() {
   // /v1/inbound，由网关裁决是否路由（未命中回 routed:false，桥接如实失败）。
 
   // 唤醒原因 → 合成事件里的人话标签（网关只负责拼段，不做业务映射）。
+  // 2026-11-18 补齐用户消息触发类标签：此前 'private' 等键缺失，回退成误导性的
+  // 「社交主动发言」——用户直接私聊提问却被标注成主动发言，网关提示词随之渲染
+  // 「这不是有人点名你，可以不说话」，间歇性压制模型回复（sent=0 忘发的根因）。
   const WAKE_REASON_LABELS = {
     proactiveCheck: '主动机会',
     timeout: '潜水超时',
     replyCheck: '回复检查',
     bootstrap: '首次唤醒',
     admin: '手动唤醒',
+    // —— 用户消息触发（wake.kind=user）——
+    private: '私聊新消息',
+    anyMessage: '群里有新消息',
+    atMention: '有人@你',
+    nameMention: '有人提到你',
+    keywords: '关键词命中',
+    question: '有人问你问题',
+    probability: '概率命中',
+    speakerIds: '重点关注的人发言',
+    poke: '有人戳了你',
   };
 
   async function deliverViaGateway(key, { wakeReason, wakeState, wakeToken, wakeSnapshot }) {
@@ -6508,11 +6588,24 @@ async function main() {
             at: typeof m?.at === 'string' ? m.at : '',
             sender: String(senderText).slice(0, 64),
             text: String(m?.plain ?? m?.text ?? '').slice(0, 2000),
+            // 记忆补录的三要素（2026-11-19）：网关 memory-ingest 靠 isSelf 跳过
+            // 机器人自己的消息（防与出站 out: 记录重复）、messageId 转 qq:<id>
+            // 稳定去重、userId 转真实 senderId（参与者归一）。缺一个就退化成
+            // 内容哈希/显示名归一——宁多传勿缺。
+            ...(m?.isSelf ? { isSelf: true } : {}),
+            ...(m?.messageId ? { messageId: String(m.messageId) } : {}),
+            ...(m?.userId ? { userId: String(m.userId) } : {}),
           };
           if (entry.text) snapshotEntries.push(entry);
         }
       }
-      const label = WAKE_REASON_LABELS[String(wakeReason ?? '').split(':')[0]] ?? '社交主动发言';
+      // 唤醒类别分流（2026-11-18）：定时器/引导类维持 proactive；用户消息触发的
+      // 唤醒标 kind='user'——网关据此渲染「有人直接找你，优先回复」的提示词，
+      // 不再落入「这不是有人点名你，可以不说话」的主动唤醒基调（误标曾直接
+      // 压制模型回复意愿）。wait 回推不受影响（其 kind 来自登记 marker）。
+      const reasonBase = String(wakeReason ?? '').split(':')[0];
+      const isUserWake = !waitPending && reasonBase !== 'wait' && !isTimerWakeReason(reasonBase);
+      const label = WAKE_REASON_LABELS[reasonBase] ?? (isUserWake ? '新消息' : '社交主动发言');
       const envelope = {
         v: 1,
         platform: 'qq',
@@ -6532,12 +6625,14 @@ async function main() {
             : { id: '0', name: 'wake-scheduler', roles: ['bot'] },
           text: waitPending
             ? `（等待回推：登记后新增 ${waitPending.marker.satisfiedSeq - waitPending.marker.baselineSeq} 条消息，正文由网关按快照合成）`
-            : `（主动唤醒：${label}，正文由网关按快照合成）`,
+            : isUserWake
+              ? `（新消息唤醒：${label}，正文由网关按快照合成）`
+              : `（主动唤醒：${label}，正文由网关按快照合成）`,
         },
         // 合成事件契约：kind=event + wake 标记。wait 回推与主动唤醒共用这条
         // 通道，prompt 一律由网关合成（适配器不再送终稿——wake-synthetic）。
         kind: 'event',
-        wake: waitPending ? waitPending.marker : { kind: 'proactive', status: 'arrived' },
+        wake: waitPending ? waitPending.marker : { kind: isUserWake ? 'user' : 'proactive', status: 'arrived' },
         ...(snapshotEntries.length ? { snapshot: snapshotEntries.slice(0, 50) } : {}),
       };
       const res = await gatewayClient.inbound(envelope);
@@ -6555,6 +6650,16 @@ async function main() {
         && socialV2.conversations.get(canonicalV2Key(key)) === wakeState
         && wakeState.agentToken === wakeToken) {
         noteModelMessagesV2(wakeState, [...wakeSnapshot.messages, ...wakeSnapshot.recent]);
+        // 自动已读推进（2026-11-18）：快照已呈递给模型，未读使命完成——不再要求
+        // 模型每回合手动调 mark_read（省一轮 20-30s 的模型往返，回复提速）。
+        // readThroughSeq 由快照构建时算好（只覆盖实际包含的消息：partial 截断
+        // 不会静默 ack 未呈递的部分，见 buildWakeSnapshotV2 的设计注释）。
+        const ackedCount = acknowledgeMessagesV2(wakeState, wakeSnapshot.readThroughSeq ?? null);
+        if (ackedCount > 0) {
+          wakeState.lastActionAt = Date.now();
+          saveSocialV2State();
+          log(`已读水位自动推进：本包 ack ${ackedCount} 条（throughSeq=${wakeSnapshot.readThroughSeq ?? '全清'}）`);
+        }
       }
       log(`已投递网关 turn ${res.body?.turnId ?? '?'} (${key})`);
       return true;
@@ -6573,6 +6678,32 @@ async function main() {
    * 两个 turn。
    * @returns {Promise<{ok:true, turnId?:string}|{ok:false, error:string}>}
    */
+  /**
+   * 入站文本净化（2026-11-21 审计修复，注入链治理第一环）：剥 C0/C1 控制字符
+   * （保留换行/制表）与零宽字符——公网 QQ 消息可携带不可见注入载荷，进网关/
+   * 记忆提取前先洗一遍。
+   */
+  function sanitizeInboundText(text) {
+    return String(text ?? '')
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '')
+      .replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '');
+  }
+  /**
+   * UTF-8 字节预算截断：按 Buffer.byteLength 累计，超预算回退到安全边界。
+   * 保证「20000 字节预算」语义而非「20000 字符」——后者在 CJK/emoji 下
+   * 体积膨胀 3~4 倍，会顶穿 WS 帧 64KB 上限（gateway-client MAX_ENVELOPE_BYTES）。
+   */
+  function truncateUtf8Bytes(text, budget) {
+    const str = String(text ?? '');
+    if (Buffer.byteLength(str, 'utf8') <= budget) return str;
+    let out = '';
+    for (const ch of str) {
+      if (Buffer.byteLength(out + ch, 'utf8') > budget) break;
+      out += ch;
+    }
+    return out + '\n…（已截断）';
+  }
+
   async function deliverInboundViaGateway(key, { kind, event, text, isOwner, media }) {
     if (!gatewayClient) return { ok: false, error: 'gateway not configured' };
     try {
@@ -6587,15 +6718,19 @@ async function main() {
         receivedAt: Date.now(),
         conversation: { kind: convKind === 'group' ? 'group' : 'private', id: String(id) },
         message: {
-          id: String(event?.message_id ?? event?.msg_id ?? `m-${Date.now().toString(36)}`),
+          id: String(event?.message_id ?? event?.msg_id ?? `m-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`),
           // 未读游标：网关 mailbox 用它推进 readThroughSeq（单调 max 兜底乱序）。
           ...(Number.isSafeInteger(st.lastUnreadSeq) && st.lastUnreadSeq > 0 ? { seq: st.lastUnreadSeq } : {}),
           sender: {
             id: String(event?.user_id ?? ''),
-            name: String(event?.sender?.card || event?.sender?.nickname || event?.user_id || '').slice(0, 64),
+            // 2026-11-21 审计修复（注入链治理第一环）：name 来自公网 QQ 消息，
+            // 先剥控制字符/零宽字符再截断——防提示注入与显示层脏字符。
+            name: sanitizeInboundText(String(event?.sender?.card || event?.sender?.nickname || event?.user_id || '')).slice(0, 64),
             roles: isOwner ? ['owner'] : ['member'],
           },
-          text: String(text ?? '').slice(0, 20000),
+          // 2026-11-21 审计修复：同上净化 + 字节预算截断——字符 slice(0,20000)
+          // 在 CJK/emoji 场景可膨胀到 ~60KB，超 WS 帧 64KB 上限被网关 E_SCHEMA 拒收。
+          text: truncateUtf8Bytes(sanitizeInboundText(String(text ?? '')), 20000),
           ...(mediaList.length ? {
             media: mediaList.slice(0, 16).map((m) => ({
               kind: m?.kind === 'image' ? 'image' : (m?.kind === 'voice' ? 'voice' : (m?.kind === 'video' ? 'video' : 'file')),
@@ -7966,7 +8101,10 @@ async function main() {
   // QQ 侧（SnowLuma OneBot WebSocket 客户端）
   const bot = new SnowLumaWebSocketClient({
     url: cfg.snowluma.wsUrl,
-    accessToken: cfg.snowluma.accessToken || undefined,
+    // WS 用独立 wsToken（缺省回退 accessToken 兼容旧配置）。旧逻辑拿 accessToken
+    // 当 WS token：config 正确时每次启动必先失败一次再自愈；字段错放 WS token
+    // 时则相反——WS 直连成功、HTTP 全 401（2026-11-17 事故）。
+    accessToken: (cfg.snowluma.wsToken || cfg.snowluma.accessToken) || undefined,
     reconnect: true
   });
 
@@ -8046,9 +8184,11 @@ async function main() {
       }
       if (login?.user_id != null) selfUserId = String(login.user_id);
     }).catch(() => {});
-    // 连接成功后顺手确认一下 token 是否已跟当前账号对齐；不一致就写回 config.json，
-    // 让 MCP 工具（另一个进程）也能拿到正确的 token。
-    void syncTokenToFile();
+    // 连接成功后**先校验再写**（2026-11-17 根治楔死循环）：
+    // 「WS 通了」≠「HTTP token 对」——两个通道是两把不同的钥匙。旧逻辑在这里
+    // 盲写 cfg.snowluma.accessToken 回 config，字段错放 WS token 时会把错值
+    // 固化，而自愈只在 WS close 触发（楔死场景 WS 永不 close）→ 发送永远 401。
+    void verifyTokenAfterOpen();
   });
 
   /**
@@ -8103,6 +8243,9 @@ async function main() {
     try {
       const w = persistSnowLumaEndpoint(path.join(ROOT, 'config.json'), {
         accessToken: httpToken,
+        // 双 token 一起持久化（2026-11-17）：下次启动 WS 直连正确 token，
+        // 消除「每次启动先 1006 一次再自愈」的固有缺陷。
+        wsToken,
         ...(followEndpoint ? { wsUrl, httpUrl: r.baseUrl } : {})
       });
       if (w.updated) log(`   已写回 config.json：${Object.keys(w.changed).join(' / ')}`);
@@ -8119,6 +8262,35 @@ async function main() {
     return wsChanged;
   }
 
+  // open 后的 token 校验节流（60s）：重连风暴时 open 密集触发，避免刷屏
+  // 和对 SnowLuma 的探测压力；close/error 自愈另有 10s 节流。
+  let tokenVerifyAt = 0;
+
+  // 连接成功后的开链路校验（2026-11-17，根治楔死循环）。
+  // 「WS 连上了」只证明 WS token 对，不证明 HTTP token 对——两把钥匙。
+  // 校验 accessToken（HTTP token）：ok → syncTokenToFile（保留 MCP 工具跨进程
+  // 读有效 token 的能力）；401 → 显著警告并立即自愈。不能再等 WS close：
+  // 楔死场景（字段里是 WS token）下 WS 永不断开，旧逻辑永远等不到自愈。
+  async function verifyTokenAfterOpen() {
+    const now = Date.now();
+    if (now - tokenVerifyAt < 60000) return;
+    tokenVerifyAt = now;
+    let probeResult;
+    try {
+      probeResult = await probeHttpToken({ baseUrl: cfg.snowluma.httpUrl, token: cfg.snowluma.accessToken, timeoutMs: 5000 });
+    } catch (error) {
+      log('⚠ HTTP token 校验异常：' + (error?.message ?? error));
+      return;
+    }
+    if (probeResult.ok) {
+      log('HTTP token 校验通过（账号 ' + (probeResult.uin ?? '?') + '），发送链路可用');
+      await syncTokenToFile();
+      return;
+    }
+    log('⚠⚠ HTTP token 校验失败（' + (probeResult.status ?? probeResult.error ?? '未知')
+      + '）：QQ 发送将全部失败（unauthorized）。字段里可能错放了 WS token——立即自愈，不等 WS 断开…');
+    await healTokenIfStale('open-token-mismatch');
+  }
   /** 只写文件、不动物件（连接已成功时用）。 */
   async function syncTokenToFile() {
     try {
@@ -8152,7 +8324,8 @@ async function main() {
     log(`SnowLuma 连接断开（code=${info?.code ?? '?'}），重连中…`);
     // 连不上时最常见的原因就是换了 QQ 账号 → token 变了；顺手自愈。
     // 注意 1006 在**每次启动**都可能出现一次：HTTP token 与 WS token 是两个不同的值，
-    // config.json 里存的是前者，WS 需要用自愈发现的那个（详见 bot.connect() 处的说明）。
+    // config.json 只存了 HTTP token，WS 需要用自愈发现的那个（详见 bot.connect() 处的说明）。
+    // 2026-11-17 起支持独立 wsToken 字段（自愈会写回），这里就很少再出现了。
     void healTokenIfStale(`close code=${info?.code ?? '?'}`);
   });
   bot.on('error', (error) => {
@@ -8170,9 +8343,9 @@ async function main() {
   bot.connect().catch((error) => {
     // 说明为什么"第一次连不上"在这里几乎是**必然**的，避免用户把它当成故障：
     // SnowLuma 的 **HTTP token（默认 3000）与 WS token（默认 3001）是两个不同的值**
-    // （实测：同一个账号，两者不同；config.json 只能存一个，存的是 HTTP 那个）。
-    // 所以 WS 首次连接通常会被拒 → close(1006) → 触发 token 自愈（重新发现 WS token）
-    // → 重连成功后才是「SnowLuma 已连接」。若 homeDir 没配/被移动/读不到 SnowLuma 的
+    // （实测：同一个账号，两者不同）。2026-11-17 起 config 支持独立 wsToken，
+    // 自愈成功后双 token 一起写回 —— wsToken 就位时 WS 首次连接直接成功；
+    // 旧配置（只有 accessToken）仍会被拒 → close(1006) → 自愈 → 重连成功。若 homeDir 没配/被移动/读不到 SnowLuma 的
     // config/onebot_<QQ>.json，自愈就无从下手，这时才会一直连不上 —— 那种情况请查
     // 日志里的「token 自愈失败」与 config.json 的 snowluma.homeDir。
     log(`SnowLuma 首次连接未成功（将在后台自动重连并尝试自愈 WS token）: ${error?.message ?? error}`);
