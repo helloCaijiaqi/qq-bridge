@@ -7,14 +7,19 @@
 //
 // 本探针：只连接、只读取、打印后立刻退出；**不发送任何消息、不创建任何会话**。
 // 用法：node scripts/probe-snowluma-heartbeat.mjs [超时秒数]
-import { SnowLumaWebSocketClient } from '@snowluma/sdk';
+// 2026-11-23 monorepo：本脚本在仓库级 scripts/，npm 依赖统一由 bridge/node_modules 提供。
+// @snowluma/sdk 是 ESM-only（exports 无 require 条目）→ 直接按入口文件 import。
+const { SnowLumaWebSocketClient } = await import(
+  new URL('../bridge/node_modules/@snowluma/sdk/dist/index.js', import.meta.url).href
+);
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { discoverSnowLumaConnection } from '../src/integrations/snowluma-conn.js';
+import { discoverSnowLumaConnection } from '../bridge/src/integrations/snowluma-conn.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
+// 2026-11-23 monorepo：桥接配置在 bridge/ 子目录
+const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'bridge', 'config.json'), 'utf8'));
 const timeoutMs = (Number(process.argv[2]) || 45) * 1000;
 
 // 用项目自己的自发现拿「当前真正可用」的 token 与端点。

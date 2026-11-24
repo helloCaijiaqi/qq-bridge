@@ -2,6 +2,12 @@
 node_modules/
 .npm-cache/
 
+# ── Monorepo 分层（2026-11-23，见 docs/plans/bridge-monorepo-plan.md）─────────
+# driver/ = SnowLuma vendor（闭源 @snowluma/runtime，EULA §5.4：不入库不重新分发）。
+# runtime 唯一副本在本目录；版本留存靠 C:\Backups\SnowLuma-full-*.zip 异盘快照。
+driver/
+!/driver/README.md
+
 # Runtime state and local config (never publish)
 state/
 
@@ -37,20 +43,20 @@ config.json
 
 # Local one-off dev/debug/patch scripts
 # (machine-specific paths/IDs, or bound to artifacts of a single probe run under state/)
-/scripts/cleanup-probe-sessions.mjs
-/scripts/cleanup-probe-workspaces.mjs
-/scripts/cleanup-test-sessions.mjs
-/scripts/debug-whitelist.mjs
-/scripts/diag-archive.mjs
-/scripts/fix-probe-workspace-title.mjs
-/scripts/patch-qq-chat-v2-collect-memory.mjs
-/scripts/patch-qq-chat-v2-presleep.mjs
-/scripts/patch-qq-chat-v2-stickers.mjs
-/scripts/patch-web-mcp-timeout.mjs
+/bridge/scripts/cleanup-probe-sessions.mjs
+/bridge/scripts/cleanup-probe-workspaces.mjs
+/bridge/scripts/cleanup-test-sessions.mjs
+/bridge/scripts/debug-whitelist.mjs
+/bridge/scripts/diag-archive.mjs
+/bridge/scripts/fix-probe-workspace-title.mjs
+/bridge/scripts/patch-qq-chat-v2-collect-memory.mjs
+/bridge/scripts/patch-qq-chat-v2-presleep.mjs
+/bridge/scripts/patch-qq-chat-v2-stickers.mjs
+/bridge/scripts/patch-web-mcp-timeout.mjs
 
 
 # 本机专用的隐私扫描规则（含真实 QQ 号/路径，不入库）
-/scripts/privacy-rules.json
+/bridge/scripts/privacy-rules.json
 
 # ── 内部文档保护（修复：忽略规则仍指向旧的根目录路径）──────────────────────
 # 上面那批 `/XXX.md` 规则是按**仓库根目录**写的，但这些文档后来整体挪进了 docs/，
@@ -58,17 +64,18 @@ config.json
 # 在 docs/ 里扫出多份含本机真实路径（含本机用户名与工作盘路径）的文件。这里按新路径补回。
 # 判断依据：① 原 .gitignore 已列出的同义文件；② privacy-scan 实测命中真实路径的文件；
 # ③ 安全审计/发布计划这类"写了怎么绕过"的内部文档。
-docs/audits/
-docs/design/
-docs/legacy/
-docs/research/
-docs/qq-bridge-PUBLISH_PLAN.md
-docs/qq-bridge-SECURITY_AUDIT.md
-docs/guides/PROJECT_GUIDE.md
-docs/guides/VOICE.md
+bridge/docs/audits/
+bridge/docs/design/
+bridge/docs/legacy/
+bridge/docs/research/
+bridge/docs/qq-bridge-PUBLISH_PLAN.md
+bridge/docs/qq-bridge-SECURITY_AUDIT.md
+bridge/docs/guides/PROJECT_GUIDE.md
+bridge/docs/guides/VOICE.md
 
 # 语音库（用户个人音频素材，config.json 的 socialV2.voice.dir 指向此处）
 audio/
+bridge/audio/
 
 
 # ── 2026-10 发布整理：本机临时产物（不进公开仓库，本地保留）──────────────────
@@ -80,7 +87,14 @@ audio/
 # 运行时由 snowluma 工具列表导出的目录缓存
 /_snowluma-catalog.json
 # 本机一键启动器，含本机 Node 运行时绝对路径，不具通用性
-/start-all.cmd
+# （2026-11-23 monorepo 整合：已迁 /scripts/start-all.cmd 并 M4 正式化入库）
+#/start-all.cmd
 
 # 本地 AI 助手（CodeBuddy）的计划草稿与工作区数据，非项目内容
 .codebuddy/
+
+# ── 2026-11-25 运行时敏感产物（含真实 accessToken 与 QQ 号，绝不入库）──
+/config/
+/data/
+# 本机一键启动器：含本机 Node 运行时绝对路径，不具通用性（正式入口 scripts/start-all.cmd）
+/start.bat
