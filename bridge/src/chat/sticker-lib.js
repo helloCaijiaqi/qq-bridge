@@ -269,7 +269,7 @@ export function buildStickerStrategyHint() {
     '- 斗图：对方连续发表情、同主题来回、或明显在逗你/挑衅时，可以斗起来——一张接一张，偶尔配一句"就这？""来啊""认输"；一般 2~3 轮就收，对方停你也停，别无限刷屏。',
     '- 频率：普通闲聊约 3~5 轮一张就够，热闹/玩梗可以更密；斗图时可以连续发，但不要每条都只发表情，也不要一轮连发多张。',
     '- 选择：优先用备注（desc）和你的记忆（localNote/tags）能对上语境的；没备注/不确定的先用 chat_media_search 按描述检索、chat_media_get 看详情（含图片描述），别瞎发；别总用同一张。',
-    '- 发送：chat_media_send 是统一发送工具（媒体记忆层适配）：带 mediaId 发已登记资产；caption 可随图配文；需要引用/点名时传 replyToMessageId / atUserId。纯文字仍用 chat_qq_send_message / chat_qq_reply。',
+    '- 发送：chat_image_send 发图片/表情、chat_voice_send 发语音（媒体记忆层适配，2026-11-25 起三工具拆分）：带 mediaId 发已登记资产；chat_image_send 的 caption 可随图配文；需要引用/点名时传 replyToMessageId / atUserId。纯文字仍用 chat_qq_send_message / chat_qq_reply。',
     '- 学习：看到新表情不确定含义，用 chat_media_search/chat_media_get 查它的描述；有了新的理解用 chat_media_note 回写认知（被解析入库即视为收藏，永不清退）。',
     '- 不要：严肃话题硬塞、一轮连发好几张、把表情当唯一回复（斗图/纯表情回应除外）、文字和表情混在同一个气泡里。'
   ].join('\n');

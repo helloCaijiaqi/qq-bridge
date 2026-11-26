@@ -11,8 +11,10 @@
  *   网关只取一次源文件。**不基于 url hash**：QQ 多媒体 url 带时效签名参数，
  *   且会过期——统一「下载/读取 → 落盘 → 按内容 hash」，彻底摆脱 url 依赖。
  *
- * 单份共享存储：落盘目录固定 c:/memory-mcp/state/media/qq/（memory-mcp 的
- * fileRef 白名单根之内）。bridge 落盘 = memory-mcp 最终持有，无复制、无双份，
+ * 单份共享存储（2026-11-26 分型分目录）：落盘 c:/memory-mcp/state/data/media/qq/
+ * {img,audio,file}/（按段类型分子目录；memory-mcp fileRef 白名单根之内），
+ * 文件名分段 ma_<id>.in.<ext>（.in=收到媒体生命周期，3 天归档窗口后由 memory
+ * 清退管道清理）。bridge 落盘 = memory-mcp 最终持有，无复制、无双份，
  * 记忆层清退任务删的就是唯一那份。
  *
  * 降级纪律：下载/读取失败、落盘失败或超过大小上限 → 该媒体**保持原字样**
@@ -44,8 +46,8 @@ const ZH_KIND_BY_SEG_TYPE = { mface: '表情', image: '图片', record: '语音'
 /** 落盘大小上限：超过直接降级（不占位符化），防大媒体拖垮链路。 */
 const MAX_MEDIA_BYTES = 50 * 1024 * 1024;
 
-/** 默认共享目录：与 memory-mcp 的 fileRef 白名单根保持一致（单份存储）。 */
-const DEFAULT_SHARED_DIR = 'c:/memory-mcp/state/media/qq';
+/** 默认共享目录：与 memory-mcp 的 fileRef 白名单根保持一致（单份存储；2026-11-26 对齐 mediaDir 迁移后的 state/data 布局）。 */
+const DEFAULT_SHARED_DIR = 'c:/memory-mcp/state/data/media/qq';
 
 /** sha256 hex → 占位符 id（公用规则：sha1(sha256hex) 前 12 位）。 */
 export function mediaIdFromHash(sha256hex) {
@@ -110,8 +112,16 @@ async function fetchSourceBuffer(src) {
 }
 
 /**
+ * 段类型 → 存储子目录（2026-11-26 分型落盘）：共享区 media/qq/{img,audio,file}。
+ * 表情(mface)/图片归 img；语音归 audio；视频/文件归 file。
+ */
+const SUBDIR_BY_SEG_TYPE = { image: 'img', mface: 'img', record: 'audio', video: 'file', file: 'file' };
+
+/**
  * 段数据 → { id, kind, fileRef, url? } 资产项；失败返回 null（降级）。
- * 落盘命名 qq/<sha256hex>.<ext>——内容寻址，天然去重（已存在直接复用）。
+ * 落盘命名（2026-11-26 分段命名）：qq/<子目录>/ma_<id>.in.<ext>——
+ *   内容寻址去重不变（已存在直接复用）；.in 段标记「收到媒体」生命周期
+ *   （3 天归档窗口，超龄走 memory 清退管道）；id 与占位符一致。
  */
 async function persistSegmentMedia(seg, { sharedDir, kind }) {
   const d = seg?.data ?? {};
@@ -127,13 +137,14 @@ async function persistSegmentMedia(seg, { sharedDir, kind }) {
   const sha256hex = createHash('sha256').update(got.buffer).digest('hex');
   const id = mediaIdFromHash(sha256hex);
   const ext = extFromSource({ url: src.url, file: src.file, mime: got.mime });
-  const dir = path.resolve(sharedDir);
+  const subdir = SUBDIR_BY_SEG_TYPE[seg?.type] ?? 'file';
+  const dir = path.resolve(sharedDir, subdir);
   try {
     mkdirSync(dir, { recursive: true });
   } catch {
     return null;
   }
-  const filePath = path.join(dir, `${sha256hex}${ext}`);
+  const filePath = path.join(dir, `${id}.in${ext}`);
   try {
     if (!existsSync(filePath)) writeFileSync(filePath, got.buffer);
   } catch {

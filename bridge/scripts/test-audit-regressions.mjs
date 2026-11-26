@@ -268,6 +268,42 @@ await test('R16 appendSocialV2Message 保留 emojiId/summary/subType（kind 统�
   } finally { await h.close(); }
 });
 
+await test('R17 handleIncoming 协议端重推去重：同 id 双推只入未读一次', async () => {
+  const h = await bridgeHarness({
+    config: {
+      socialV2: { enabled: true, wake: { batchWindowMs: 1000 } },
+    },
+  });
+  try {
+    const st = h.getSocialV2State('group:456');
+    st.bootstrapSent = true;
+    st.wakeConfig.triggers = {};
+    const voiceEvent = (messageId) => ({
+      self_id: 999,
+      user_id: 789,
+      message_id: messageId,
+      message: [{ type: 'record', data: { file: 'voice.amr', url: '' } }],
+      raw_message: '[语音]',
+      sender: { nickname: '群友', card: '群友' },
+    });
+    // 第一次：正常入未读
+    await h.handleIncoming('group', '456', voiceEvent(-572516745), h.cfg);
+    assert.equal(st.unread.length, 1, '首推必须正常入未读');
+    // 协议端同秒重推：必须被丢弃（实测故障形态：语音消息 MsgPush 连推两次）
+    await h.handleIncoming('group', '456', voiceEvent(-572516745), h.cfg);
+    assert.equal(st.unread.length, 1, `重推不得二次入未读（实得 ${st.unread.length}）`);
+    // 不同消息 id：不得误伤
+    await h.handleIncoming('group', '456', voiceEvent(-572516746), h.cfg);
+    assert.equal(st.unread.length, 2, '不同 id 的新消息必须正常入未读');
+    // 无 message_id 的事件：保持旧行为（不拦）
+    const noId = { ...voiceEvent(0) };
+    delete noId.message_id; delete noId.msg_id; delete noId.message_seq;
+    await h.handleIncoming('group', '456', noId, h.cfg);
+    await h.handleIncoming('group', '456', noId, h.cfg);
+    assert.equal(st.unread.length, 4, '无 id 事件保持旧行为（两次都入未读）');
+  } finally { await h.close(); }
+});
+
 if (failures) {
   console.error(`\n${failures} 项失败`);
   process.exitCode = 1;

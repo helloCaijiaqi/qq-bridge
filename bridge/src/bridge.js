@@ -405,7 +405,11 @@ function loadConfig() {
         setWakeConfig: true,
         markRead: true,
         getForwardMsg: true,
-        sendPoke: true
+        sendPoke: true,
+        // config.json 的 socialV2.tools 透传（2026-11-25 修缺口）：tools 块当初
+        // 硬编码时漏了 spread——voice/sticker 都有，导致 sendVoice 等开关永远
+        // 锁死在默认值，改配置文件无效（语音发送链路 E_UNSUPPORTED 假故障）。
+        ...(file.socialV2?.tools ?? {})
       },
       wake: {
         defaultMode: 'diving',
@@ -1198,6 +1202,12 @@ async function main() {
     return {
       enabled: v.enabled !== false,
       dir: path.resolve(ROOT, String(v.dir ?? 'audio')),
+      // trustedRoots（2026-11-26 语音通道对齐 memory-mcp）：AI 通道绝对路径白名单根
+      // （与 send_image 的 MEDIA_FILE_ROOTS 同信任级）——合成语音等落在 memory-mcp
+      // 共享区的文件经 gateway 传同机绝对路径直达；相对路径仍严格限语音库内。
+      trustedRoots: Array.isArray(v.trustedRoots)
+        ? v.trustedRoots.map((p) => path.resolve(String(p))).filter(Boolean)
+        : [],
       maxSeconds: Number(v.maxSeconds) > 0 ? Number(v.maxSeconds) : 300,
       maxBytes: Number(v.maxBytes) > 0 ? Number(v.maxBytes) : 20 * 1024 * 1024,
       maxPerMinute: Number(v.maxPerMinute) >= 0 ? Number(v.maxPerMinute) : 2,
@@ -1239,6 +1249,18 @@ async function main() {
     return safeJoinLibrary(vc.dir, rel);
   }
 
+  /** trustedRoots 白名单判定（2026-11-26）：绝对路径落在任一受信根之内且为真实
+   *  文件 → 放行（与 send_image 的 MEDIA_FILE_ROOTS 同构的包含检查；不做 realpath
+   *  追踪——受信根是 memory-mcp 数据区， bridge 只读发送，与图片通道风险面一致）。 */
+  function voicePathInsideTrustedRoot(vc, absPath) {
+    if (!Array.isArray(vc.trustedRoots) || vc.trustedRoots.length === 0) return false;
+    if (!fs.existsSync(absPath) || !fs.statSync(absPath).isFile()) return false;
+    return vc.trustedRoots.some((root) => {
+      const rel = path.relative(root, absPath);
+      return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
+    });
+  }
+
   function resolveVoicePathForV2(input) {
     const vc = voiceCfg();
     const raw = String(input ?? '').trim();
@@ -1254,10 +1276,14 @@ async function main() {
       const confined = r.path ? voicePathInsideLibrary(vc, r.path) : null;
       if (confined) {
         resolved = { path: confined, via: `${r.via}+library-confined` };
+      } else if (r.path && voicePathInsideTrustedRoot(vc, r.path)) {
+        // trustedRoots 白名单（2026-11-26）：memory-mcp 共享区同机路径（与 send_image
+        // 的 MEDIA_FILE_ROOTS 同信任级）——克隆合成语音经 gateway 直发不落语音库。
+        resolved = { path: r.path, via: `${r.via}+trusted-root` };
       } else {
         // 只报目录名，不报绝对路径：这条消息会经 MCP 工具错误回给模型，
         // 而模型面对的是不可信的群聊内容（prompt injection 可能诱导它复述本机路径）。
-        throw new Error(`语音只能从语音库取文件（语音库目录：${path.basename(vc.dir)}）；即使是绝对路径也必须位于语音库之内（socialV2.voice.allowAbsolutePath 已不再放宽 AI 通道）。请把音频放进语音库，或用操作者通道（CLI / 控制台）发送库外文件。`);
+        throw new Error(`语音只能从语音库或受信共享区取文件（语音库目录：${path.basename(vc.dir)}${vc.trustedRoots.length ? `；受信区：${vc.trustedRoots.map((p) => path.basename(p)).join('、')}` : ''}）；即使是绝对路径也必须位于白名单之内（socialV2.voice.allowAbsolutePath 已不再放宽 AI 通道）。请把音频放进语音库，或用操作者通道（CLI / 控制台）发送库外文件。`);
       }
     } else {
       // ⚠️ 安全关键：相对路径**只能**在语音库内解析。
@@ -1563,7 +1589,7 @@ async function main() {
   // caption 以 text 段跟在图片后（同气泡配文，真人发图习惯）。
   const MEDIA_FILE_ROOTS = (Array.isArray(cfg.socialV2?.sticker?.mediaFileRoots) && cfg.socialV2.sticker.mediaFileRoots.length)
     ? cfg.socialV2.sticker.mediaFileRoots.map((p) => path.resolve(String(p)))
-    : [path.resolve('c:/memory-mcp/state/media')];
+    : [path.resolve('c:/memory-mcp/state/data/media')];   // 2026-11-26 对齐 memory-mcp mediaDir 迁移后的新布局
   async function sendImageV2(key, payload = {}) {
     const assertSendAllowed = captureSendGuard(key);
     const fileRef = String(payload.fileRef ?? '').trim();
@@ -5640,6 +5666,33 @@ async function main() {
   // 二代会话见过的 forward id（有界，避免 recentMessages 滚动淘汰后无法读取刚见过的转发）
   const seenForwardIds = new Map(); // key -> Set<string>
 
+  // 入站消息去重（2026-11-26）：driver 协议端（snowluma MsgPush）偶发同秒双推同一
+  // 事件（实测语音 ID:-572516745 连推两次 → 未读双入队 → DSH 回两条）。QQ 同一会话
+  // 内每条独立消息 id 唯一，重推必然同 id —— 按 (selfId:会话:messageRef) 短窗内存
+  // 去重：命中即丢弃（不落未读/不唤醒/不 ack）。无 messageRef 的事件不拦（保持旧行为）。
+  const seenInboundIds = new Map(); // dedupeKey -> firstSeenAt(ms)
+  const INBOUND_DEDUPE_TTL_MS = 10 * 60 * 1000;
+  const INBOUND_DEDUPE_MAX = 5000;
+  function isInboundDuplicate(dedupeKey, now = Date.now()) {
+    const seenAt = seenInboundIds.get(dedupeKey);
+    if (seenAt != null) {
+      if (now - seenAt < INBOUND_DEDUPE_TTL_MS) return true;
+      seenInboundIds.set(dedupeKey, now); // 过期重登记（罕见：仅 Map 未被清理时可达）
+      return false;
+    }
+    seenInboundIds.set(dedupeKey, now);
+    if (seenInboundIds.size > INBOUND_DEDUPE_MAX) {
+      // 先清过期项，仍超则删最旧（Map 插入序天然支持）
+      for (const [k, t] of seenInboundIds) {
+        if (now - t >= INBOUND_DEDUPE_TTL_MS) seenInboundIds.delete(k);
+      }
+      while (seenInboundIds.size > INBOUND_DEDUPE_MAX) {
+        seenInboundIds.delete(seenInboundIds.keys().next().value);
+      }
+    }
+    return false;
+  }
+
   // 归一化“指定群友发言唤醒”名单：
   // - 只保留正整数 QQ 号（字符串形式），拒绝 null/对象/“null”/非法字符等脏数据；
   // - 去重并限制最多 20 个，避免唤醒名单无限膨胀/被恶意塞入异常值；
@@ -7673,6 +7726,16 @@ async function main() {
     if (!isSessionAllowed(key)) {
       log(`忽略未授权会话 ${key}（不在白名单内，来自 ${event.user_id}）`);
       return;
+    }
+    // 协议端重推去重（2026-11-26）：snowluma 偶发同秒双推同一事件（实测语音消息），
+    // 双入队会让 DSH 对同一消息回复两次。放白名单后、媒体落盘前——重复事件零开销丢弃。
+    const inboundRef = String(event.message_id ?? event.msg_id ?? event.message_seq ?? '');
+    if (inboundRef) {
+      const dedupeKey = `${event.self_id ?? ''}:${key}:${inboundRef}`;
+      if (isInboundDuplicate(dedupeKey)) {
+        log(`[dedupe] 丢弃协议端重推事件 ${key} id=${inboundRef}`);
+        return;
+      }
     }
     const resolveAtName = async (qq) => {
       // 只有群聊才需要把 @QQ号 解析成群名片/昵称；私聊没有群成员概念

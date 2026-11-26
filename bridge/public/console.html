@@ -1926,7 +1926,7 @@ button:active:not(:disabled) {
       <div class="row">
         <label style="flex:1">提示中列出常用表情数</label><input type="number" id="v2StickerPromptMax" min="1" max="30" style="width:90px">
         <label style="flex:1">在 prompt/唤醒里附带表情摘要</label><input type="checkbox" id="v2StickerIncludePrompt" style="width:auto">
-        <span class="meta" style="flex:2">表情库只读（工具已退役）：AI 检索/发送媒体统一走 chat_media_search / chat_media_send。</span>
+        <span class="meta" style="flex:2">表情库只读（工具已退役）：AI 检索/发送媒体统一走 chat_media_search / chat_image_send。</span>
       </div>
 
       </div></details>
@@ -2026,7 +2026,7 @@ button:active:not(:disabled) {
         <tr><td>chat_qq_send_group_message / chat_qq_send_private_message / chat_qq_reply / chat_qq_send_burst / chat_qq_send_message</td><td>发送文本：单条、引用回复、分条与真人化间隔</td></tr>
         <tr><td>chat_qq_wait / chat_qq_mark_read / chat_qq_set_wake</td><td>等待新消息、标记已读、设置唤醒/潜水条件</td></tr>
         <tr><td>chat_qq_get_forward_msg / chat_qq_poke</td><td>合并转发内容、拍一拍</td></tr>
-        <tr><td>chat_media_send / chat_media_search / chat_media_note（memory 服务）</td><td>跨平台媒体发送与媒体记忆检索（看图/表情/语音）</td></tr>
+        <tr><td>chat_image_send / chat_voice_send / chat_file_send / chat_media_search / chat_media_note（memory 服务）</td><td>跨平台媒体发送（三工具拆分）与媒体记忆检索（看图/表情/语音）</td></tr>
         <tr><td>chat_qq_send_voice / chat_qq_list_voices</td><td>语音条发送（仅语音库内音频，偶然而为的强表达）</td></tr>
         <tr><td>chat_report_feedback</td><td>向控制台反馈 AI 遇到的问题/困惑</td></tr>
       </table>
